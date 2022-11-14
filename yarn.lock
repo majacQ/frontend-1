@@ -9220,7 +9220,7 @@ fsevents@^1.2.7:
     lodash.template: ^4.5.0
     magic-string: ^0.25.7
     map-stream: ^0.0.7
-    marked: ^3.0.2
+    marked: ^4.0.10
     memoize-one: ^5.2.1
     merge-stream: ^1.0.1
     mocha: ^8.4.0
@@ -10890,13 +10890,13 @@ fsevents@^1.2.7:
   linkType: hard
 
 "loader-utils@npm:^1.4.0":
-  version: 1.4.0
-  resolution: "loader-utils@npm:1.4.0"
+  version: 1.4.2
+  resolution: "loader-utils@npm:1.4.2"
   dependencies:
     big.js: ^5.2.2
     emojis-list: ^3.0.0
     json5: ^1.0.1
-  checksum: d150b15e7a42ac47d935c8b484b79e44ff6ab4c75df7cc4cb9093350cf014ec0b17bdb60c5d6f91a37b8b218bd63b973e263c65944f58ca2573e402b9a27e717
+  checksum: eb6fb622efc0ffd1abdf68a2022f9eac62bef8ec599cf8adb75e94d1d338381780be6278534170e99edc03380a6d29bc7eb1563c89ce17c5fed3a0b17f1ad804
   languageName: node
   linkType: hard
 
@@ -11328,12 +11328,12 @@ fsevents@^1.2.7:
   languageName: node
   linkType: hard
 
-"marked@npm:^3.0.2":
-  version: 3.0.2
-  resolution: "marked@npm:3.0.2"
+"marked@npm:^4.0.10":
+  version: 4.2.2
+  resolution: "marked@npm:4.2.2"
   bin:
-    marked: bin/marked
-  checksum: 6f88083a7e50494f97af9f92f1b03a299ecde78055f7378dd0837f12aa2e192db84b7ed528d3e7008fd8d26d39f23a2a07af2a349899917171531574798563b5
+    marked: bin/marked.js
+  checksum: 1593e0632ff8dee1b9c8b669f26c8ce41e675bcb08ef75052845d4943db2c4d887edacd5b2120cf99a2cc06e9fbffc346ebaf98a7555273fda6a935adbfacf50
   languageName: node
   linkType: hard
 
@@ -11797,12 +11797,21 @@ fsevents@^1.2.7:
   languageName: node
   linkType: hard
 
-"nanoid@npm:3.1.31, nanoid@npm:^3.1.31":
-  version: 3.1.31
-  resolution: "nanoid@npm:3.1.31"
+"nanoid@npm:3.1.20":
+  version: 3.1.20
+  resolution: "nanoid@npm:3.1.20"
   bin:
     nanoid: bin/nanoid.cjs
   checksum: f6246023d5d8313c2c16be05c18cdb189a6de50ab6418b513b34086eda4aabd12866b2cbe435548c760dc43cf11830b26b14b113afde47305398e3345795e433
+  languageName: node
+  linkType: hard
+
+"nanoid@npm:^3.0.1":
+  version: 3.3.4
+  resolution: "nanoid@npm:3.3.4"
+  bin:
+    nanoid: bin/nanoid.cjs
+  checksum: 2fddd6dee994b7676f008d3ffa4ab16035a754f4bb586c61df5a22cf8c8c94017aadd360368f47d653829e0569a92b129979152ff97af23a558331e47e37cd9c
   languageName: node
   linkType: hard
 
