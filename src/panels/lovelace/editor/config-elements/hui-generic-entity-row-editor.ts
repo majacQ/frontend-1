@@ -1,24 +1,19 @@
-import "@polymer/paper-input/paper-input";
-import { CSSResultGroup, html, LitElement, TemplateResult } from "lit";
+import { html, LitElement, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators";
+import memoizeOne from "memoize-one";
 import { assert } from "superstruct";
 import { fireEvent } from "../../../../common/dom/fire_event";
 import { computeDomain } from "../../../../common/entity/compute_domain";
-import { stateIcon } from "../../../../common/entity/state_icon";
-import "../../../../components/ha-formfield";
-import "../../../../components/ha-icon-input";
-import "../../../../components/ha-switch";
-import { HomeAssistant } from "../../../../types";
-import { EntitiesCardEntityConfig } from "../../cards/types";
-import "../../components/hui-action-editor";
-import "../../components/hui-entity-editor";
-import "../../components/hui-theme-select-editor";
-import { LovelaceRowEditor } from "../../types";
+import type { LocalizeFunc } from "../../../../common/translations/localize";
+import "../../../../components/ha-form/ha-form";
+import type { SchemaUnion } from "../../../../components/ha-form/types";
+import type { HomeAssistant } from "../../../../types";
+import type { EntitiesCardEntityConfig } from "../../cards/types";
+import type { LovelaceRowEditor } from "../../types";
 import { entitiesConfigStruct } from "../structs/entities-struct";
-import { EditorTarget, EntitiesEditorEvent } from "../types";
-import { configElementStyle } from "./config-elements-style";
 
-const SecondaryInfoValues: { [key: string]: { domains?: string[] } } = {
+const SecondaryInfoValues = {
+  none: {},
   "entity-id": {},
   "last-changed": {},
   "last-updated": {},
@@ -26,12 +21,13 @@ const SecondaryInfoValues: { [key: string]: { domains?: string[] } } = {
   position: { domains: ["cover"] },
   "tilt-position": { domains: ["cover"] },
   brightness: { domains: ["light"] },
-};
+} as const;
 
 @customElement("hui-generic-entity-row-editor")
 export class HuiGenericEntityRowEditor
   extends LitElement
-  implements LovelaceRowEditor {
+  implements LovelaceRowEditor
+{
   @property({ attribute: false }) public hass?: HomeAssistant;
 
   @state() private _config?: EntitiesCardEntityConfig;
@@ -41,121 +37,86 @@ export class HuiGenericEntityRowEditor
     this._config = config;
   }
 
-  get _entity(): string {
-    return this._config!.entity || "";
-  }
+  private _schema = memoizeOne((entity: string, localize: LocalizeFunc) => {
+    const domain = computeDomain(entity);
 
-  get _name(): string {
-    return this._config!.name || "";
-  }
+    return [
+      { name: "entity", required: true, selector: { entity: {} } },
+      {
+        type: "grid",
+        name: "",
+        schema: [
+          { name: "name", selector: { text: {} } },
+          {
+            name: "icon",
+            selector: {
+              icon: {},
+            },
+            context: {
+              icon_entity: "entity",
+            },
+          },
+        ],
+      },
+      {
+        name: "secondary_info",
+        selector: {
+          select: {
+            options: (
+              Object.keys(SecondaryInfoValues).filter(
+                (info) =>
+                  !("domains" in SecondaryInfoValues[info]) ||
+                  ("domains" in SecondaryInfoValues[info] &&
+                    SecondaryInfoValues[info].domains!.includes(domain))
+              ) as Array<keyof typeof SecondaryInfoValues>
+            ).map((info) => ({
+              value: info,
+              label: localize(
+                `ui.panel.lovelace.editor.card.entities.secondary_info_values.${info}`
+              ),
+            })),
+          },
+        },
+      },
+    ] as const;
+  });
 
-  get _icon(): string {
-    return this._config!.icon || "";
-  }
-
-  get _secondary_info(): string {
-    return this._config!.secondary_info || "";
-  }
-
-  protected render(): TemplateResult {
+  protected render() {
     if (!this.hass || !this._config) {
-      return html``;
+      return nothing;
     }
 
-    const domain = computeDomain(this._config.entity);
+    const schema = this._schema(this._config.entity, this.hass.localize);
 
     return html`
-      <div class="card-config">
-        <ha-entity-picker
-          allow-custom-entity
-          .hass=${this.hass}
-          .value=${this._config.entity}
-          .configValue=${"entity"}
-          @change=${this._valueChanged}
-        ></ha-entity-picker>
-        <div class="side-by-side">
-          <paper-input
-            .label=${this.hass!.localize(
-              "ui.panel.lovelace.editor.card.generic.name"
-            )}
-            .value=${this._config.name}
-            .configValue=${"name"}
-            @value-changed=${this._valueChanged}
-          ></paper-input>
-          <ha-icon-input
-            .label=${this.hass!.localize(
-              "ui.panel.lovelace.editor.card.generic.icon"
-            )}
-            .value=${this._config.icon}
-            .placeholder=${stateIcon(this.hass!.states[this._config.entity])}
-            .configValue=${"icon"}
-            @value-changed=${this._valueChanged}
-          ></ha-icon-input>
-        </div>
-        <paper-dropdown-menu .label=${"Secondary Info"}>
-          <paper-listbox
-            slot="dropdown-content"
-            attr-for-selected="value"
-            .selected=${this._config.secondary_info || "none"}
-            .configValue=${"secondary_info"}
-            @iron-select=${this._valueChanged}
-          >
-            <paper-item value=""
-              >${this.hass!.localize(
-                "ui.panel.lovelace.editor.card.entities.secondary_info_values.none"
-              )}</paper-item
-            >
-            ${Object.keys(SecondaryInfoValues).map((info) => {
-              if (
-                !("domains" in SecondaryInfoValues[info]) ||
-                ("domains" in SecondaryInfoValues[info] &&
-                  SecondaryInfoValues[info].domains!.includes(domain))
-              ) {
-                return html`
-                  <paper-item .value=${info}
-                    >${this.hass!.localize(
-                      `ui.panel.lovelace.editor.card.entities.secondary_info_values.${info}`
-                    )}</paper-item
-                  >
-                `;
-              }
-              return "";
-            })}
-          </paper-listbox>
-        </paper-dropdown-menu>
-      </div>
+      <ha-form
+        .hass=${this.hass}
+        .data=${this._config}
+        .schema=${schema}
+        .computeLabel=${this._computeLabelCallback}
+        @value-changed=${this._valueChanged}
+      ></ha-form>
     `;
   }
 
-  private _valueChanged(ev: EntitiesEditorEvent): void {
-    if (!this._config || !this.hass) {
-      return;
-    }
-    const target = ev.target! as EditorTarget;
-    const value = target.value || ev.detail?.item?.value;
-
-    if (this[`_${target.configValue}`] === value) {
-      return;
-    }
-
-    if (target.configValue) {
-      if (value === "" || !value) {
-        this._config = { ...this._config };
-        delete this._config[target.configValue!];
-      } else {
-        this._config = {
-          ...this._config,
-          [target.configValue!]: value,
-        };
-      }
-    }
-
-    fireEvent(this, "config-changed", { config: this._config });
+  private _valueChanged(ev: CustomEvent): void {
+    fireEvent(this, "config-changed", { config: ev.detail.value });
   }
 
-  static get styles(): CSSResultGroup {
-    return configElementStyle;
-  }
+  private _computeLabelCallback = (
+    schema: SchemaUnion<ReturnType<typeof this._schema>>
+  ) => {
+    switch (schema.name) {
+      case "secondary_info":
+        return this.hass!.localize(
+          `ui.panel.lovelace.editor.card.entity-row.${schema.name}`
+        );
+      default:
+        return this.hass!.localize(
+          `ui.panel.lovelace.editor.card.generic.${schema.name}`
+        );
+    }
+  };
 }
 
 declare global {

@@ -1,13 +1,5 @@
 import { navigate } from "../common/navigate";
-import {
-  DEFAULT_ACCENT_COLOR,
-  DEFAULT_PRIMARY_COLOR,
-} from "../resources/ha-style";
 import { HomeAssistant } from "../types";
-
-export const defaultRadiusColor = DEFAULT_ACCENT_COLOR;
-export const homeRadiusColor = DEFAULT_PRIMARY_COLOR;
-export const passiveRadiusColor = "#9b9b9b";
 
 export interface Zone {
   id: string;
@@ -20,12 +12,12 @@ export interface Zone {
 }
 
 export interface ZoneMutableParams {
-  icon: string;
+  name: string;
+  icon?: string;
   latitude: number;
   longitude: number;
-  name: string;
-  passive: boolean;
-  radius: number;
+  passive?: boolean;
+  radius?: number;
 }
 
 export const fetchZones = (hass: HomeAssistant) =>

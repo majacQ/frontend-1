@@ -1,5 +1,5 @@
 import "@material/mwc-button/mwc-button";
-import { css, CSSResultGroup, html, LitElement, TemplateResult } from "lit";
+import { css, CSSResultGroup, html, LitElement, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators";
 import { fireEvent } from "../../../../common/dom/fire_event";
 import { createCloseHeading } from "../../../../components/ha-dialog";
@@ -14,7 +14,8 @@ import type { CreateHeaderFooterDialogParams } from "./show-create-headerfooter-
 @customElement("hui-dialog-create-headerfooter")
 export class HuiCreateDialogHeaderFooter
   extends LitElement
-  implements HassDialog<CreateHeaderFooterDialogParams> {
+  implements HassDialog<CreateHeaderFooterDialogParams>
+{
   @property({ attribute: false }) protected hass!: HomeAssistant;
 
   @state() private _params?: CreateHeaderFooterDialogParams;
@@ -31,9 +32,9 @@ export class HuiCreateDialogHeaderFooter
     return true;
   }
 
-  protected render(): TemplateResult {
+  protected render() {
     if (!this._params) {
-      return html``;
+      return nothing;
     }
 
     return html`
@@ -55,15 +56,20 @@ export class HuiCreateDialogHeaderFooter
       >
         <div class="elements">
           ${headerFooterElements.map(
-            (headerFooter) =>
+            (headerFooter, index) =>
               html`
                 <ha-card
+                  role="button"
+                  tabindex="0"
+                  aria-labelledby=${"card-name-" + index}
                   outlined
                   .type=${headerFooter.type}
                   @click=${this._handleHeaderFooterPicked}
+                  @keyDown=${this._handleHeaderFooterPicked}
+                  dialogInitialFocus
                 >
                   <ha-svg-icon .path=${headerFooter.icon}></ha-svg-icon>
-                  <div>
+                  <div .id=${"card-name-" + index} role="none presentation">
                     ${this.hass!.localize(
                       `ui.panel.lovelace.editor.header-footer.types.${headerFooter.type}.name`
                     )}
@@ -82,6 +88,15 @@ export class HuiCreateDialogHeaderFooter
   }
 
   private async _handleHeaderFooterPicked(ev: CustomEvent): Promise<void> {
+    if (
+      ev instanceof KeyboardEvent &&
+      ev.key !== "Enter" &&
+      ev.key !== " " &&
+      ev.key !== "Spacebar"
+    ) {
+      return;
+    }
+
     const type = (ev.currentTarget as any).type;
     let config: LovelaceHeaderFooterConfig = { type };
 
@@ -130,7 +145,7 @@ export class HuiCreateDialogHeaderFooter
         ha-dialog {
           --mdc-dialog-max-width: 550px;
           --dialog-content-padding: 2px 24px 20px 24px;
-          --dialog-z-index: 5;
+          --dialog-z-index: 6;
         }
 
         .elements {

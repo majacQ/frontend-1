@@ -1,4 +1,4 @@
-import { css, CSSResultGroup, html, LitElement, TemplateResult } from "lit";
+import { css, CSSResultGroup, html, LitElement, nothing } from "lit";
 import { customElement, state } from "lit/decorators";
 import { ifDefined } from "lit/directives/if-defined";
 import "../../../components/ha-icon";
@@ -24,15 +24,15 @@ export class HuiIconElement extends LitElement implements LovelaceElement {
     this._config = { hold_action: { action: "more-info" }, ...config };
   }
 
-  protected render(): TemplateResult {
+  protected render() {
     if (!this._config || !this.hass) {
-      return html``;
+      return nothing;
     }
 
     return html`
       <ha-icon
-        .icon="${this._config.icon}"
-        .title="${computeTooltip(this.hass, this._config)}"
+        .icon=${this._config.icon}
+        .title=${computeTooltip(this.hass, this._config)}
         @action=${this._handleAction}
         .actionHandler=${actionHandler({
           hasHold: hasAction(this._config!.hold_action),

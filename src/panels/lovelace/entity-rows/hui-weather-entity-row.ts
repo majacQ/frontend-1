@@ -4,19 +4,16 @@ import {
   html,
   LitElement,
   PropertyValues,
-  TemplateResult,
+  nothing,
 } from "lit";
 import { customElement, property, state } from "lit/decorators";
 import { classMap } from "lit/directives/class-map";
 import { ifDefined } from "lit/directives/if-defined";
-import { DOMAINS_HIDE_MORE_INFO } from "../../../common/const";
-import { computeDomain } from "../../../common/entity/compute_domain";
 import { computeStateDisplay } from "../../../common/entity/compute_state_display";
 import { computeStateName } from "../../../common/entity/compute_state_name";
-import { stateIcon } from "../../../common/entity/state_icon";
-import { formatNumber } from "../../../common/string/format_number";
+import { formatNumber } from "../../../common/number/format_number";
 import "../../../components/entity/state-badge";
-import { UNAVAILABLE_STATES } from "../../../data/entity";
+import { isUnavailableState } from "../../../data/entity";
 import { ActionHandlerEvent } from "../../../data/lovelace";
 import {
   getSecondaryWeatherAttribute,
@@ -53,9 +50,9 @@ class HuiWeatherEntityRow extends LitElement implements LovelaceRow {
     return hasConfigOrEntityChanged(this, changedProps);
   }
 
-  protected render(): TemplateResult {
+  protected render() {
     if (!this.hass || !this._config) {
-      return html``;
+      return nothing;
     }
 
     const stateObj = this.hass.states[this._config.entity] as WeatherEntity;
@@ -68,11 +65,11 @@ class HuiWeatherEntityRow extends LitElement implements LovelaceRow {
       `;
     }
 
-    const pointer =
-      (this._config.tap_action && this._config.tap_action.action !== "none") ||
-      (this._config.entity &&
-        !DOMAINS_HIDE_MORE_INFO.includes(computeDomain(this._config.entity)));
+    const pointer = !(
+      this._config.tap_action && this._config.tap_action.action !== "none"
+    );
 
+    const hasSecondary = this._config.secondary_info;
     const weatherStateIcon = getWeatherStateIcon(stateObj.state, this);
 
     return html`
@@ -89,12 +86,16 @@ class HuiWeatherEntityRow extends LitElement implements LovelaceRow {
       >
         ${weatherStateIcon ||
         html`
-          <ha-icon class="weather-icon" .icon=${stateIcon(stateObj)}></ha-icon>
+          <ha-state-icon
+            class="weather-icon"
+            .state=${stateObj}
+          ></ha-state-icon>
         `}
       </div>
       <div
         class="info ${classMap({
           pointer,
+          "text-content": !hasSecondary,
         })}"
         @action=${this._handleAction}
         .actionHandler=${actionHandler({
@@ -103,21 +104,59 @@ class HuiWeatherEntityRow extends LitElement implements LovelaceRow {
         })}
       >
         ${this._config.name || computeStateName(stateObj)}
+        ${hasSecondary
+          ? html`
+              <div class="secondary">
+                ${this._config.secondary_info === "entity-id"
+                  ? stateObj.entity_id
+                  : this._config.secondary_info === "last-changed"
+                  ? html`
+                      <ha-relative-time
+                        .hass=${this.hass}
+                        .datetime=${stateObj.last_changed}
+                        capitalize
+                      ></ha-relative-time>
+                    `
+                  : this._config.secondary_info === "last-updated"
+                  ? html`
+                      <ha-relative-time
+                        .hass=${this.hass}
+                        .datetime=${stateObj.last_updated}
+                        capitalize
+                      ></ha-relative-time>
+                    `
+                  : ""}
+              </div>
+            `
+          : ""}
       </div>
-      <div class="attributes">
+      <div
+        class="attributes ${classMap({
+          pointer,
+        })}"
+        @action=${this._handleAction}
+        .actionHandler=${actionHandler({
+          hasHold: hasAction(this._config!.hold_action),
+          hasDoubleClick: hasAction(this._config!.double_tap_action),
+        })}
+      >
         <div>
-          ${UNAVAILABLE_STATES.includes(stateObj.state)
+          ${isUnavailableState(stateObj.state) ||
+          stateObj.attributes.temperature === undefined ||
+          stateObj.attributes.temperature === null
             ? computeStateDisplay(
                 this.hass.localize,
                 stateObj,
-                this.hass.locale
+                this.hass.locale,
+                this.hass.config,
+                this.hass.entities
               )
             : html`
                 ${formatNumber(
                   stateObj.attributes.temperature,
                   this.hass.locale
                 )}
-                ${getWeatherUnit(this.hass, "temperature")}
+                ${getWeatherUnit(this.hass, stateObj, "temperature")}
               `}
         </div>
         <div class="secondary">
@@ -171,8 +210,7 @@ class HuiWeatherEntityRow extends LitElement implements LovelaceRow {
         }
 
         .weather-icon {
-          --iron-icon-width: 40px;
-          --iron-icon-height: 40px;
+          --mdc-icon-size: 40px;
         }
 
         :host([rtl]) .flex {

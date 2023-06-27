@@ -1,7 +1,6 @@
-import { undoDepth } from "@codemirror/history";
+import { undoDepth } from "@codemirror/commands";
 import "@material/mwc-button";
-import "@polymer/app-layout/app-header/app-header";
-import "@polymer/app-layout/app-toolbar/app-toolbar";
+import { mdiClose } from "@mdi/js";
 import { dump, load } from "js-yaml";
 import {
   css,
@@ -14,23 +13,21 @@ import {
 import { customElement, property, state } from "lit/decorators";
 import { classMap } from "lit/directives/class-map";
 import { array, assert, object, optional, string, type } from "superstruct";
-import { computeRTL } from "../../common/util/compute_rtl";
 import { deepEqual } from "../../common/util/deep-equal";
 import "../../components/ha-circular-progress";
 import "../../components/ha-code-editor";
 import type { HaCodeEditor } from "../../components/ha-code-editor";
-import "../../components/ha-icon";
 import "../../components/ha-icon-button";
 import type { LovelaceConfig } from "../../data/lovelace";
 import {
   showAlertDialog,
   showConfirmationDialog,
 } from "../../dialogs/generic/show-dialog-box";
-import "../../layouts/ha-app-layout";
 import { haStyle } from "../../resources/styles";
 import type { HomeAssistant } from "../../types";
 import { showToast } from "../../util/toast";
 import type { Lovelace } from "./types";
+import "../../components/ha-top-app-bar-fixed";
 
 const lovelaceStruct = type({
   title: optional(string()),
@@ -51,54 +48,52 @@ class LovelaceFullConfigEditor extends LitElement {
 
   protected render(): TemplateResult | void {
     return html`
-      <ha-app-layout>
-        <app-header slot="header">
-          <app-toolbar>
-            <ha-icon-button
-              icon="hass:close"
-              @click="${this._closeEditor}"
-            ></ha-icon-button>
-            <div main-title>
-              ${this.hass!.localize(
-                "ui.panel.lovelace.editor.raw_editor.header"
-              )}
-            </div>
-            <div
-              class="save-button
+      <ha-top-app-bar-fixed>
+        <ha-icon-button
+          slot="navigationIcon"
+          .path=${mdiClose}
+          @click=${this._closeEditor}
+          .label=${this.hass!.localize("ui.common.close")}
+        ></ha-icon-button>
+        <div slot="title">
+          ${this.hass!.localize("ui.panel.lovelace.editor.raw_editor.header")}
+        </div>
+        <div
+          slot="actionItems"
+          class="save-button
               ${classMap({
-                saved: this._saving! === false || this._changed === true,
-              })}"
-            >
-              ${this._changed
-                ? this.hass!.localize(
-                    "ui.panel.lovelace.editor.raw_editor.unsaved_changes"
-                  )
-                : this.hass!.localize(
-                    "ui.panel.lovelace.editor.raw_editor.saved"
-                  )}
-            </div>
-            <mwc-button
-              raised
-              @click=${this._handleSave}
-              .disabled=${!this._changed}
-              >${this.hass!.localize(
-                "ui.panel.lovelace.editor.raw_editor.save"
-              )}</mwc-button
-            >
-          </app-toolbar>
-        </app-header>
+            saved: this._saving! === false || this._changed === true,
+          })}"
+        >
+          ${this._changed
+            ? this.hass!.localize(
+                "ui.panel.lovelace.editor.raw_editor.unsaved_changes"
+              )
+            : this.hass!.localize("ui.panel.lovelace.editor.raw_editor.saved")}
+        </div>
+        <mwc-button
+          raised
+          slot="actionItems"
+          @click=${this._handleSave}
+          .disabled=${!this._changed}
+          >${this.hass!.localize(
+            "ui.panel.lovelace.editor.raw_editor.save"
+          )}</mwc-button
+        >
         <div class="content">
           <ha-code-editor
             mode="yaml"
             autofocus
-            .rtl=${computeRTL(this.hass)}
+            autocomplete-entities
+            autocomplete-icons
             .hass=${this.hass}
             @value-changed=${this._yamlChanged}
             @editor-save=${this._handleSave}
+            dir="ltr"
           >
           </ha-code-editor>
         </div>
-      </ha-app-layout>
+      </ha-top-app-bar-fixed>
     `;
   }
 
@@ -140,15 +135,11 @@ class LovelaceFullConfigEditor extends LitElement {
       css`
         :host {
           --code-mirror-height: 100%;
-        }
-
-        ha-app-layout {
-          height: 100vh;
-        }
-
-        app-toolbar {
-          background-color: var(--dark-background-color, #455a64);
-          color: var(--dark-text-color);
+          --app-header-background-color: var(
+            --app-header-edit-background-color,
+            #455a64
+          );
+          --app-header-text-color: var(--app-header-edit-text-color, #fff);
         }
 
         mwc-button[disabled] {
@@ -156,12 +147,12 @@ class LovelaceFullConfigEditor extends LitElement {
           border-radius: 4px;
         }
 
-        .comments {
-          font-size: 16px;
-        }
-
         .content {
           height: calc(100vh - var(--header-height));
+        }
+
+        .comments {
+          font-size: 16px;
         }
 
         .save-button {
@@ -209,7 +200,7 @@ class LovelaceFullConfigEditor extends LitElement {
   private async _removeConfig() {
     try {
       await this.lovelace!.deleteConfig();
-    } catch (err) {
+    } catch (err: any) {
       showAlertDialog(this, {
         text: this.hass.localize(
           "ui.panel.lovelace.editor.raw_editor.error_remove",
@@ -259,7 +250,7 @@ class LovelaceFullConfigEditor extends LitElement {
     let config: LovelaceConfig;
     try {
       config = load(value) as LovelaceConfig;
-    } catch (err) {
+    } catch (err: any) {
       showAlertDialog(this, {
         text: this.hass.localize(
           "ui.panel.lovelace.editor.raw_editor.error_parse_yaml",
@@ -272,7 +263,7 @@ class LovelaceFullConfigEditor extends LitElement {
     }
     try {
       assert(config, lovelaceStruct);
-    } catch (err) {
+    } catch (err: any) {
       showAlertDialog(this, {
         text: this.hass.localize(
           "ui.panel.lovelace.editor.raw_editor.error_invalid_config",
@@ -292,7 +283,7 @@ class LovelaceFullConfigEditor extends LitElement {
     }
     try {
       await this.lovelace!.saveConfig(config);
-    } catch (err) {
+    } catch (err: any) {
       showAlertDialog(this, {
         text: this.hass.localize(
           "ui.panel.lovelace.editor.raw_editor.error_save_yaml",

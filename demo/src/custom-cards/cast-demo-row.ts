@@ -1,4 +1,5 @@
-import { css, CSSResultGroup, html, LitElement, TemplateResult } from "lit";
+import { mdiTelevision } from "@mdi/js";
+import { css, CSSResultGroup, html, LitElement, nothing } from "lit";
 import { customElement, state } from "lit/decorators";
 import { CastManager } from "../../../src/cast/cast_manager";
 import { castSendShowDemo } from "../../../src/cast/receiver_messages";
@@ -19,15 +20,15 @@ class CastDemoRow extends LitElement implements LovelaceRow {
     // No config possible.
   }
 
-  protected render(): TemplateResult {
+  protected render() {
     if (
       !this._castManager ||
       this._castManager.castState === "NO_DEVICES_AVAILABLE"
     ) {
-      return html``;
+      return nothing;
     }
     return html`
-      <ha-icon icon="hademo:television"></ha-icon>
+      <ha-svg-icon .path=${mdiTelevision}></ha-svg-icon>
       <div class="flex">
         <div class="name">Show Chromecast interface</div>
         <google-cast-launcher></google-cast-launcher>
@@ -72,7 +73,7 @@ class CastDemoRow extends LitElement implements LovelaceRow {
         display: flex;
         align-items: center;
       }
-      ha-icon {
+      ha-svg-icon {
         padding: 8px;
         color: var(--paper-item-icon-color);
       }

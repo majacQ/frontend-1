@@ -5,16 +5,16 @@ import {
   LitElement,
   PropertyValues,
   TemplateResult,
+  nothing,
 } from "lit";
 import { customElement, property, state } from "lit/decorators";
-import { classMap } from "lit/directives/class-map";
 import { ifDefined } from "lit/directives/if-defined";
 import { applyThemesOnElement } from "../../../common/dom/apply_themes_on_element";
 import { computeDomain } from "../../../common/entity/compute_domain";
 import { computeStateDisplay } from "../../../common/entity/compute_state_display";
 import { computeStateName } from "../../../common/entity/compute_state_name";
 import "../../../components/ha-card";
-import { UNAVAILABLE_STATES } from "../../../data/entity";
+import { computeImageUrl, ImageEntity } from "../../../data/image";
 import { ActionHandlerEvent } from "../../../data/lovelace";
 import { HomeAssistant } from "../../../types";
 import { actionHandler } from "../common/directives/action-handler-directive";
@@ -69,7 +69,7 @@ class HuiPictureEntityCard extends LitElement implements LovelaceCard {
     }
 
     if (
-      computeDomain(config.entity) !== "camera" &&
+      !["camera", "image"].includes(computeDomain(config.entity)) &&
       !config.image &&
       !config.state_image &&
       !config.camera_image
@@ -104,9 +104,9 @@ class HuiPictureEntityCard extends LitElement implements LovelaceCard {
     }
   }
 
-  protected render(): TemplateResult {
+  protected render() {
     if (!this._config || !this.hass) {
-      return html``;
+      return nothing;
     }
 
     const stateObj = this.hass.states[this._config.entity];
@@ -123,7 +123,9 @@ class HuiPictureEntityCard extends LitElement implements LovelaceCard {
     const entityState = computeStateDisplay(
       this.hass!.localize,
       stateObj,
-      this.hass.locale
+      this.hass.locale,
+      this.hass.config,
+      this.hass.entities
     );
 
     let footer: TemplateResult | string = "";
@@ -135,19 +137,23 @@ class HuiPictureEntityCard extends LitElement implements LovelaceCard {
         </div>
       `;
     } else if (this._config.show_name) {
-      footer = html`<div class="footer">${name}</div>`;
+      footer = html`<div class="footer single">${name}</div>`;
     } else if (this._config.show_state) {
-      footer = html`<div class="footer state">${entityState}</div>`;
+      footer = html`<div class="footer single">${entityState}</div>`;
     }
+
+    const domain = computeDomain(this._config.entity);
 
     return html`
       <ha-card>
         <hui-image
           .hass=${this.hass}
-          .image=${this._config.image}
+          .image=${domain === "image"
+            ? computeImageUrl(stateObj as ImageEntity)
+            : this._config.image}
           .stateImage=${this._config.state_image}
           .stateFilter=${this._config.state_filter}
-          .cameraImage=${computeDomain(this._config.entity) === "camera"
+          .cameraImage=${domain === "camera"
             ? this._config.entity
             : this._config.camera_image}
           .cameraView=${this._config.camera_view}
@@ -163,9 +169,6 @@ class HuiPictureEntityCard extends LitElement implements LovelaceCard {
               ? "0"
               : undefined
           )}
-          class=${classMap({
-            clickable: !UNAVAILABLE_STATES.includes(stateObj.state),
-          })}
         ></hui-image>
         ${footer}
       </ha-card>
@@ -182,7 +185,7 @@ class HuiPictureEntityCard extends LitElement implements LovelaceCard {
         box-sizing: border-box;
       }
 
-      hui-image.clickable {
+      hui-image {
         cursor: pointer;
       }
 
@@ -205,6 +208,7 @@ class HuiPictureEntityCard extends LitElement implements LovelaceCard {
         font-size: 16px;
         line-height: 16px;
         color: var(--ha-picture-card-text-color, white);
+        pointer-events: none;
       }
 
       .both {
@@ -212,8 +216,8 @@ class HuiPictureEntityCard extends LitElement implements LovelaceCard {
         justify-content: space-between;
       }
 
-      .state {
-        text-align: right;
+      .single {
+        text-align: center;
       }
     `;
   }

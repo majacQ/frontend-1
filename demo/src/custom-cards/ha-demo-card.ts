@@ -1,6 +1,6 @@
 import "@material/mwc-button";
-import { css, CSSResultGroup, html, LitElement, TemplateResult } from "lit";
-import { property, state } from "lit/decorators";
+import { css, CSSResultGroup, html, LitElement, nothing } from "lit";
+import { customElement, property, state } from "lit/decorators";
 import { until } from "lit/directives/until";
 import "../../../src/components/ha-card";
 import "../../../src/components/ha-circular-progress";
@@ -14,12 +14,13 @@ import {
   setDemoConfig,
 } from "../configs/demo-configs";
 
+@customElement("ha-demo-card")
 export class HADemoCard extends LitElement implements LovelaceCard {
   @property({ attribute: false }) public lovelace?: Lovelace;
 
   @property({ attribute: false }) public hass!: MockHomeAssistant;
 
-  @state() private _switching?: boolean;
+  @state() private _switching = false;
 
   private _hidden = localStorage.hide_demo_card;
 
@@ -27,16 +28,11 @@ export class HADemoCard extends LitElement implements LovelaceCard {
     return this._hidden ? 0 : 2;
   }
 
-  public setConfig(
-    // @ts-ignore
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    config: LovelaceCardConfig
-    // eslint-disable-next-line @typescript-eslint/no-empty-function
-  ) {}
+  public setConfig(_config: LovelaceCardConfig) {}
 
-  protected render(): TemplateResult {
+  protected render() {
     if (this._hidden) {
-      return html``;
+      return nothing;
     }
     return html`
       <ha-card>
@@ -49,7 +45,7 @@ export class HADemoCard extends LitElement implements LovelaceCard {
                     (conf) => html`
                       ${conf.name}
                       <small>
-                        <a target="_blank" href="${conf.authorUrl}">
+                        <a target="_blank" href=${conf.authorUrl}>
                           ${this.hass.localize(
                             "ui.panel.page-demo.cards.demo.demo_by",
                             "name",
@@ -99,7 +95,7 @@ export class HADemoCard extends LitElement implements LovelaceCard {
     this._switching = true;
     try {
       await setDemoConfig(this.hass, this.lovelace!, index);
-    } catch (err) {
+    } catch (err: any) {
       alert("Failed to switch config :-(");
     } finally {
       this._switching = false;
@@ -159,5 +155,3 @@ declare global {
     "ha-demo-card": HADemoCard;
   }
 }
-
-customElements.define("ha-demo-card", HADemoCard);

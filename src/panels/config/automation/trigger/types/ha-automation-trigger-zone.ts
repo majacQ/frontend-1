@@ -1,15 +1,13 @@
-import "@polymer/paper-radio-button/paper-radio-button";
-import "@polymer/paper-radio-group/paper-radio-group";
-import type { PaperRadioGroupElement } from "@polymer/paper-radio-group/paper-radio-group";
-import { html, LitElement } from "lit";
+import "../../../../../components/entity/ha-entity-picker";
+import "../../../../../components/ha-formfield";
+import { css, html, LitElement } from "lit";
 import { customElement, property } from "lit/decorators";
 import { fireEvent } from "../../../../../common/dom/fire_event";
 import { computeStateDomain } from "../../../../../common/entity/compute_state_domain";
 import { hasLocation } from "../../../../../common/entity/has_location";
-import "../../../../../components/entity/ha-entity-picker";
 import type { ZoneTrigger } from "../../../../../data/automation";
-import type { PolymerChangedEvent } from "../../../../../polymer-types";
-import type { HomeAssistant } from "../../../../../types";
+import type { ValueChangedEvent, HomeAssistant } from "../../../../../types";
+import type { HaRadio } from "../../../../../components/ha-radio";
 
 function zoneAndLocationFilter(stateObj) {
   return hasLocation(stateObj) && computeStateDomain(stateObj) !== "zone";
@@ -23,11 +21,13 @@ export class HaZoneTrigger extends LitElement {
 
   @property() public trigger!: ZoneTrigger;
 
+  @property({ type: Boolean }) public disabled = false;
+
   public static get defaultConfig() {
     return {
       entity_id: "",
       zone: "",
-      event: "enter",
+      event: "enter" as ZoneTrigger["event"],
     };
   }
 
@@ -39,6 +39,7 @@ export class HaZoneTrigger extends LitElement {
           "ui.panel.config.automation.editor.triggers.type.zone.entity"
         )}
         .value=${entity_id}
+        .disabled=${this.disabled}
         @value-changed=${this._entityPicked}
         .hass=${this.hass}
         allow-custom-entity
@@ -49,43 +50,57 @@ export class HaZoneTrigger extends LitElement {
           "ui.panel.config.automation.editor.triggers.type.zone.zone"
         )}
         .value=${zone}
+        .disabled=${this.disabled}
         @value-changed=${this._zonePicked}
         .hass=${this.hass}
         allow-custom-entity
         .includeDomains=${includeDomains}
       ></ha-entity-picker>
-      <label id="eventlabel">
+
+      <label>
         ${this.hass.localize(
           "ui.panel.config.automation.editor.triggers.type.zone.event"
         )}
-      </label>
-      <paper-radio-group
-        .selected=${event}
-        aria-labelledby="eventlabel"
-        @paper-radio-group-changed=${this._radioGroupPicked}
-      >
-        <paper-radio-button name="enter">
-          ${this.hass.localize(
+        <ha-formfield
+          .disabled=${this.disabled}
+          .label=${this.hass.localize(
             "ui.panel.config.automation.editor.triggers.type.zone.enter"
           )}
-        </paper-radio-button>
-        <paper-radio-button name="leave">
-          ${this.hass.localize(
+        >
+          <ha-radio
+            name="event"
+            value="enter"
+            .disabled=${this.disabled}
+            .checked=${event === "enter"}
+            @change=${this._radioGroupPicked}
+          ></ha-radio>
+        </ha-formfield>
+        <ha-formfield
+          .disabled=${this.disabled}
+          .label=${this.hass.localize(
             "ui.panel.config.automation.editor.triggers.type.zone.leave"
           )}
-        </paper-radio-button>
-      </paper-radio-group>
+        >
+          <ha-radio
+            name="event"
+            value="leave"
+            .disabled=${this.disabled}
+            .checked=${event === "leave"}
+            @change=${this._radioGroupPicked}
+          ></ha-radio>
+        </ha-formfield>
+      </label>
     `;
   }
 
-  private _entityPicked(ev: PolymerChangedEvent<string>) {
+  private _entityPicked(ev: ValueChangedEvent<string>) {
     ev.stopPropagation();
     fireEvent(this, "value-changed", {
       value: { ...this.trigger, entity_id: ev.detail.value },
     });
   }
 
-  private _zonePicked(ev: PolymerChangedEvent<string>) {
+  private _zonePicked(ev: ValueChangedEvent<string>) {
     ev.stopPropagation();
     fireEvent(this, "value-changed", {
       value: { ...this.trigger, zone: ev.detail.value },
@@ -97,10 +112,21 @@ export class HaZoneTrigger extends LitElement {
     fireEvent(this, "value-changed", {
       value: {
         ...this.trigger,
-        event: (ev.target as PaperRadioGroupElement).selected,
+        event: (ev.target as HaRadio).value,
       },
     });
   }
+
+  static styles = css`
+    label {
+      display: flex;
+      align-items: center;
+    }
+    ha-entity-picker {
+      display: block;
+      margin-bottom: 24px;
+    }
+  `;
 }
 
 declare global {

@@ -1,30 +1,59 @@
-import "@polymer/paper-input/paper-input";
-import { CSSResultGroup, html, LitElement, TemplateResult } from "lit";
+import { css, CSSResultGroup, html, LitElement, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators";
-import { array, assert, number, object, optional, string } from "superstruct";
+import {
+  array,
+  assert,
+  assign,
+  boolean,
+  number,
+  object,
+  optional,
+  string,
+} from "superstruct";
 import { fireEvent } from "../../../../common/dom/fire_event";
-import { HomeAssistant } from "../../../../types";
-import { HistoryGraphCardConfig } from "../../cards/types";
+import "../../../../components/ha-form/ha-form";
+import type { SchemaUnion } from "../../../../components/ha-form/types";
+import type { HomeAssistant } from "../../../../types";
+import type { HistoryGraphCardConfig } from "../../cards/types";
 import "../../components/hui-entity-editor";
-import { EntityConfig } from "../../entity-rows/types";
-import { LovelaceCardEditor } from "../../types";
+import type { EntityConfig } from "../../entity-rows/types";
+import type { LovelaceCardEditor } from "../../types";
 import { processEditorEntities } from "../process-editor-entities";
+import { baseLovelaceCardConfig } from "../structs/base-card-struct";
 import { entitiesConfigStruct } from "../structs/entities-struct";
-import { EditorTarget, EntitiesEditorEvent } from "../types";
-import { configElementStyle } from "./config-elements-style";
+import { DEFAULT_HOURS_TO_SHOW } from "../../cards/hui-history-graph-card";
 
-const cardConfigStruct = object({
-  type: string(),
-  entities: array(entitiesConfigStruct),
-  title: optional(string()),
-  hours_to_show: optional(number()),
-  refresh_interval: optional(number()),
-});
+const cardConfigStruct = assign(
+  baseLovelaceCardConfig,
+  object({
+    entities: array(entitiesConfigStruct),
+    title: optional(string()),
+    hours_to_show: optional(number()),
+    refresh_interval: optional(number()), // deprecated
+    show_names: optional(boolean()),
+  })
+);
+
+const SCHEMA = [
+  { name: "title", selector: { text: {} } },
+  {
+    name: "",
+    type: "grid",
+    schema: [
+      {
+        name: "hours_to_show",
+        default: DEFAULT_HOURS_TO_SHOW,
+        selector: { number: { min: 1, mode: "box" } },
+      },
+    ],
+  },
+] as const;
 
 @customElement("hui-history-graph-card-editor")
 export class HuiHistoryGraphCardEditor
   extends LitElement
-  implements LovelaceCardEditor {
+  implements LovelaceCardEditor
+{
   @property({ attribute: false }) public hass?: HomeAssistant;
 
   @state() private _config?: HistoryGraphCardConfig;
@@ -37,107 +66,48 @@ export class HuiHistoryGraphCardEditor
     this._configEntities = processEditorEntities(config.entities);
   }
 
-  get _entity(): string {
-    return this._config!.entity || "";
-  }
-
-  get _title(): string {
-    return this._config!.title || "";
-  }
-
-  get _hours_to_show(): number {
-    return this._config!.hours_to_show || 24;
-  }
-
-  get _refresh_interval(): number {
-    return this._config!.refresh_interval || 0;
-  }
-
-  protected render(): TemplateResult {
+  protected render() {
     if (!this.hass || !this._config) {
-      return html``;
+      return nothing;
     }
 
     return html`
-      <div class="card-config">
-        <paper-input
-          .label="${this.hass.localize(
-            "ui.panel.lovelace.editor.card.generic.title"
-          )} (${this.hass.localize(
-            "ui.panel.lovelace.editor.card.config.optional"
-          )})"
-          .value="${this._title}"
-          .configValue="${"title"}"
-          @value-changed="${this._valueChanged}"
-        ></paper-input>
-        <div class="side-by-side">
-          <paper-input
-            type="number"
-            .label="${this.hass.localize(
-              "ui.panel.lovelace.editor.card.generic.hours_to_show"
-            )} (${this.hass.localize(
-              "ui.panel.lovelace.editor.card.config.optional"
-            )})"
-            .value="${this._hours_to_show}"
-            .configValue=${"hours_to_show"}
-            @value-changed="${this._valueChanged}"
-          ></paper-input>
-          <paper-input
-            type="number"
-            .label="${this.hass.localize(
-              "ui.panel.lovelace.editor.card.generic.refresh_interval"
-            )} (${this.hass.localize(
-              "ui.panel.lovelace.editor.card.config.optional"
-            )})"
-            .value="${this._refresh_interval}"
-            .configValue=${"refresh_interval"}
-            @value-changed="${this._valueChanged}"
-          ></paper-input>
-        </div>
-        <hui-entity-editor
-          .hass=${this.hass}
-          .entities="${this._configEntities}"
-          @entities-changed="${this._valueChanged}"
-        ></hui-entity-editor>
-      </div>
+      <ha-form
+        .hass=${this.hass}
+        .data=${this._config}
+        .schema=${SCHEMA}
+        .computeLabel=${this._computeLabelCallback}
+        @value-changed=${this._valueChanged}
+      ></ha-form>
+      <hui-entity-editor
+        .hass=${this.hass}
+        .entities=${this._configEntities}
+        @entities-changed=${this._entitiesChanged}
+      ></hui-entity-editor>
     `;
   }
 
-  private _valueChanged(ev: EntitiesEditorEvent): void {
-    if (!this._config || !this.hass) {
-      return;
-    }
-    const target = ev.target! as EditorTarget;
-
-    if (!ev.detail && this[`_${target.configValue}`] === target.value) {
-      return;
-    }
-
-    if (ev.detail && ev.detail.entities) {
-      this._config = { ...this._config, entities: ev.detail.entities };
-      this._configEntities = processEditorEntities(this._config.entities);
-    } else if (target.configValue) {
-      if (target.value === "") {
-        this._config = { ...this._config };
-        delete this._config[target.configValue!];
-      } else {
-        let value: any = target.value;
-        if (target.type === "number") {
-          value = Number(value);
-        }
-        this._config = {
-          ...this._config,
-          [target.configValue!]: value,
-        };
-      }
-    }
-
-    fireEvent(this, "config-changed", { config: this._config });
+  private _valueChanged(ev: CustomEvent): void {
+    fireEvent(this, "config-changed", { config: ev.detail.value });
   }
 
-  static get styles(): CSSResultGroup {
-    return configElementStyle;
+  private _entitiesChanged(ev: CustomEvent): void {
+    let config = this._config!;
+
+    config = { ...config, entities: ev.detail.entities };
+    this._configEntities = processEditorEntities(config.entities);
+
+    fireEvent(this, "config-changed", { config });
   }
+
+  private _computeLabelCallback = (schema: SchemaUnion<typeof SCHEMA>) =>
+    this.hass!.localize(`ui.panel.lovelace.editor.card.generic.${schema.name}`);
+
+  static styles: CSSResultGroup = css`
+    ha-form {
+      margin-bottom: 24px;
+    }
+  `;
 }
 
 declare global {

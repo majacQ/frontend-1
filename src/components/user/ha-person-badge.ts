@@ -1,17 +1,17 @@
-import { css, CSSResultGroup, html, LitElement, TemplateResult } from "lit";
+import { css, CSSResultGroup, html, LitElement, nothing } from "lit";
 import { customElement, property } from "lit/decorators";
 import { classMap } from "lit/directives/class-map";
 import { styleMap } from "lit/directives/style-map";
 import { Person } from "../../data/person";
-import { computeInitials } from "./ha-user-badge";
+import { computeUserInitials } from "../../data/user";
 
 @customElement("ha-person-badge")
 class PersonBadge extends LitElement {
   @property({ attribute: false }) public person?: Person;
 
-  protected render(): TemplateResult {
+  protected render() {
     if (!this.person) {
-      return html``;
+      return nothing;
     }
 
     const picture = this.person.picture;
@@ -22,7 +22,7 @@ class PersonBadge extends LitElement {
         class="picture"
       ></div>`;
     }
-    const initials = computeInitials(this.person.name);
+    const initials = computeUserInitials(this.person.name);
     return html`<div
       class="initials ${classMap({ long: initials!.length > 2 })}"
     >

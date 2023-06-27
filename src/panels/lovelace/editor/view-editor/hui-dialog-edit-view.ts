@@ -1,13 +1,27 @@
 import "@material/mwc-button";
+import { ActionDetail } from "@material/mwc-list";
+import { mdiCheck, mdiClose, mdiDotsVertical } from "@mdi/js";
 import "@polymer/paper-tabs/paper-tab";
 import "@polymer/paper-tabs/paper-tabs";
-import { css, CSSResultGroup, html, LitElement, TemplateResult } from "lit";
-import { customElement, property, state } from "lit/decorators";
+import {
+  css,
+  CSSResultGroup,
+  html,
+  LitElement,
+  nothing,
+  PropertyValues,
+} from "lit";
+import { customElement, property, query, state } from "lit/decorators";
+import { classMap } from "lit/directives/class-map";
 import { fireEvent, HASSDomEvent } from "../../../../common/dom/fire_event";
+import { stopPropagation } from "../../../../common/dom/stop_propagation";
 import { navigate } from "../../../../common/navigate";
+import { deepEqual } from "../../../../common/util/deep-equal";
+import "../../../../components/ha-alert";
 import "../../../../components/ha-circular-progress";
 import "../../../../components/ha-dialog";
-import "../../../../components/ha-icon-button";
+import "../../../../components/ha-dialog-header";
+import { HaYamlEditor } from "../../../../components/ha-yaml-editor";
 import type {
   LovelaceBadgeConfig,
   LovelaceCardConfig,
@@ -20,6 +34,11 @@ import {
 import { haStyleDialog } from "../../../../resources/styles";
 import type { HomeAssistant } from "../../../../types";
 import "../../components/hui-entity-editor";
+import {
+  DEFAULT_VIEW_LAYOUT,
+  PANEL_VIEW_LAYOUT,
+  VIEWS_NO_BADGE_SUPPORT,
+} from "../../views/const";
 import { addView, deleteView, replaceView } from "../config-util";
 import "../hui-badge-preview";
 import { processEditorEntities } from "../process-editor-entities";
@@ -48,7 +67,32 @@ export class HuiDialogEditView extends LitElement {
 
   @state() private _curTab?: string;
 
+  @state() private _dirty = false;
+
+  @state() private _yamlMode = false;
+
+  @query("ha-yaml-editor") private _editor?: HaYamlEditor;
+
   private _curTabIndex = 0;
+
+  get _type(): string {
+    if (!this._config) {
+      return DEFAULT_VIEW_LAYOUT;
+    }
+    return this._config.panel
+      ? PANEL_VIEW_LAYOUT
+      : this._config.type || DEFAULT_VIEW_LAYOUT;
+  }
+
+  protected updated(changedProperties: PropertyValues) {
+    if (this._yamlMode && changedProperties.has("_yamlMode")) {
+      const viewConfig = {
+        ...this._config,
+        badges: this._badges,
+      };
+      this._editor?.setValue(viewConfig);
+    }
+  }
 
   public showDialog(params: EditViewDialogParams): void {
     this._params = params;
@@ -57,12 +101,10 @@ export class HuiDialogEditView extends LitElement {
       this._config = {};
       this._badges = [];
       this._cards = [];
+      this._dirty = false;
     } else {
-      const {
-        cards,
-        badges,
-        ...viewConfig
-      } = this._params.lovelace!.config.views[this._params.viewIndex];
+      const { cards, badges, ...viewConfig } =
+        this._params.lovelace!.config.views[this._params.viewIndex];
       this._config = viewConfig;
       this._badges = badges ? processEditorEntities(badges) : [];
       this._cards = cards;
@@ -74,6 +116,8 @@ export class HuiDialogEditView extends LitElement {
     this._params = undefined;
     this._config = {};
     this._badges = [];
+    this._yamlMode = false;
+    this._dirty = false;
     fireEvent(this, "dialog-closed", { dialog: this.localName });
   }
 
@@ -89,108 +133,170 @@ export class HuiDialogEditView extends LitElement {
     );
   }
 
-  protected render(): TemplateResult {
+  protected render() {
     if (!this._params) {
-      return html``;
+      return nothing;
     }
 
     let content;
-    switch (this._curTab) {
-      case "tab-settings":
-        content = html`
-          <hui-view-editor
-            .isNew=${this._params.viewIndex === undefined}
-            .hass=${this.hass}
-            .config="${this._config}"
-            @view-config-changed="${this._viewConfigChanged}"
-          ></hui-view-editor>
-        `;
-        break;
-      case "tab-badges":
-        content = html`
-          ${this._badges?.length
-            ? html`
-                ${this._config?.panel
-                  ? html`
-                      <p class="warning">
-                        ${this.hass!.localize(
-                          "ui.panel.lovelace.editor.edit_badges.panel_mode"
-                        )}
-                      </p>
-                    `
-                  : ""}
-                <div class="preview-badges">
-                  ${this._badges.map(
-                    (badgeConfig) => html`
-                      <hui-badge-preview
-                        .hass=${this.hass}
-                        .config=${badgeConfig}
-                      ></hui-badge-preview>
-                    `
-                  )}
-                </div>
-              `
-            : ""}
-          <hui-entity-editor
-            .hass=${this.hass}
-            .entities="${this._badges}"
-            @entities-changed="${this._badgesChanged}"
-          ></hui-entity-editor>
-        `;
-        break;
-      case "tab-visibility":
-        content = html`
-          <hui-view-visibility-editor
-            .hass=${this.hass}
-            .config="${this._config}"
-            @view-visibility-changed="${this._viewVisibilityChanged}"
-          ></hui-view-visibility-editor>
-        `;
-        break;
-      case "tab-cards":
-        content = html` Cards `;
-        break;
+
+    if (this._yamlMode) {
+      content = html`
+        <ha-yaml-editor
+          .hass=${this.hass}
+          dialogInitialFocus
+          @value-changed=${this._viewYamlChanged}
+        ></ha-yaml-editor>
+      `;
+    } else {
+      switch (this._curTab) {
+        case "tab-settings":
+          content = html`
+            <hui-view-editor
+              .isNew=${this._params.viewIndex === undefined}
+              .hass=${this.hass}
+              .config=${this._config}
+              @view-config-changed=${this._viewConfigChanged}
+            ></hui-view-editor>
+          `;
+          break;
+        case "tab-badges":
+          content = html`
+            ${this._badges?.length
+              ? html`
+                  ${VIEWS_NO_BADGE_SUPPORT.includes(this._type)
+                    ? html`
+                        <ha-alert alert-type="warning">
+                          ${this.hass!.localize(
+                            "ui.panel.lovelace.editor.edit_badges.view_no_badges"
+                          )}
+                        </ha-alert>
+                      `
+                    : ""}
+                  <div class="preview-badges">
+                    ${this._badges.map(
+                      (badgeConfig) => html`
+                        <hui-badge-preview
+                          .hass=${this.hass}
+                          .config=${badgeConfig}
+                        ></hui-badge-preview>
+                      `
+                    )}
+                  </div>
+                `
+              : ""}
+            <hui-entity-editor
+              .hass=${this.hass}
+              .entities=${this._badges}
+              @entities-changed=${this._badgesChanged}
+            ></hui-entity-editor>
+          `;
+          break;
+        case "tab-visibility":
+          content = html`
+            <hui-view-visibility-editor
+              .hass=${this.hass}
+              .config=${this._config}
+              @view-visibility-changed=${this._viewVisibilityChanged}
+            ></hui-view-visibility-editor>
+          `;
+          break;
+        case "tab-cards":
+          content = html` Cards `;
+          break;
+      }
     }
+
     return html`
       <ha-dialog
         open
         scrimClickAction
         escapeKeyAction
         @closed=${this.closeDialog}
-        .heading=${true}
+        .heading=${this._viewConfigTitle}
+        class=${classMap({
+          "yaml-mode": this._yamlMode,
+        })}
       >
-        <div slot="heading">
-          <h2>${this._viewConfigTitle}</h2>
-          <paper-tabs
-            scrollable
-            hide-scroll-buttons
-            .selected="${this._curTabIndex}"
-            @selected-item-changed="${this._handleTabSelected}"
+        <ha-dialog-header show-border slot="heading">
+          <ha-icon-button
+            slot="navigationIcon"
+            dialogAction="cancel"
+            .label=${this.hass!.localize("ui.common.close")}
+            .path=${mdiClose}
+          ></ha-icon-button>
+          <h2 slot="title">${this._viewConfigTitle}</h2>
+          <ha-button-menu
+            slot="actionItems"
+            fixed
+            corner="BOTTOM_END"
+            menuCorner="END"
+            @action=${this._handleAction}
+            @closed=${stopPropagation}
           >
-            <paper-tab id="tab-settings"
-              >${this.hass!.localize(
-                "ui.panel.lovelace.editor.edit_view.tab_settings"
-              )}</paper-tab
-            >
-            <paper-tab id="tab-badges"
-              >${this.hass!.localize(
-                "ui.panel.lovelace.editor.edit_view.tab_badges"
-              )}</paper-tab
-            >
-            <paper-tab id="tab-visibility"
-              >${this.hass!.localize(
-                "ui.panel.lovelace.editor.edit_view.tab_visibility"
-              )}</paper-tab
-            >
-          </paper-tabs>
-        </div>
+            <ha-icon-button
+              slot="trigger"
+              .label=${this.hass!.localize("ui.common.menu")}
+              .path=${mdiDotsVertical}
+            ></ha-icon-button>
+            <mwc-list-item graphic="icon">
+              ${this.hass!.localize(
+                "ui.panel.lovelace.editor.edit_view.edit_ui"
+              )}
+              ${!this._yamlMode
+                ? html`<ha-svg-icon
+                    class="selected_menu_item"
+                    slot="graphic"
+                    .path=${mdiCheck}
+                  ></ha-svg-icon>`
+                : ``}
+            </mwc-list-item>
+
+            <mwc-list-item graphic="icon">
+              ${this.hass!.localize(
+                "ui.panel.lovelace.editor.edit_view.edit_yaml"
+              )}
+              ${this._yamlMode
+                ? html`<ha-svg-icon
+                    class="selected_menu_item"
+                    slot="graphic"
+                    .path=${mdiCheck}
+                  ></ha-svg-icon>`
+                : ``}
+            </mwc-list-item>
+          </ha-button-menu>
+          ${!this._yamlMode
+            ? html`<paper-tabs
+                scrollable
+                hide-scroll-buttons
+                .selected=${this._curTabIndex}
+                @selected-item-changed=${this._handleTabSelected}
+              >
+                <paper-tab id="tab-settings" dialogInitialFocus
+                  >${this.hass!.localize(
+                    "ui.panel.lovelace.editor.edit_view.tab_settings"
+                  )}</paper-tab
+                >
+                <paper-tab id="tab-badges"
+                  >${this.hass!.localize(
+                    "ui.panel.lovelace.editor.edit_view.tab_badges"
+                  )}</paper-tab
+                >
+                <paper-tab id="tab-visibility"
+                  >${this.hass!.localize(
+                    "ui.panel.lovelace.editor.edit_view.tab_visibility"
+                  )}</paper-tab
+                >
+              </paper-tabs>`
+            : ""}
+        </ha-dialog-header>
         ${content}
         ${this._params.viewIndex !== undefined
           ? html`
               <mwc-button
                 class="warning"
                 slot="secondaryAction"
-                @click="${this._deleteConfirm}"
+                @click=${this._deleteConfirm}
               >
                 ${this.hass!.localize(
                   "ui.panel.lovelace.editor.edit_view.delete"
@@ -198,13 +304,13 @@ export class HuiDialogEditView extends LitElement {
               </mwc-button>
             `
           : ""}
-        <mwc-button @click="${this.closeDialog}" slot="primaryAction"
+        <mwc-button @click=${this.closeDialog} slot="primaryAction"
           >${this.hass!.localize("ui.common.cancel")}</mwc-button
         >
         <mwc-button
           slot="primaryAction"
-          ?disabled="${!this._config || this._saving}"
-          @click="${this._save}"
+          ?disabled=${!this._config || this._saving || !this._dirty}
+          @click=${this._save}
         >
           ${this._saving
             ? html`<ha-circular-progress
@@ -219,6 +325,19 @@ export class HuiDialogEditView extends LitElement {
     `;
   }
 
+  private async _handleAction(ev: CustomEvent<ActionDetail>) {
+    ev.stopPropagation();
+    ev.preventDefault();
+    switch (ev.detail.index) {
+      case 0:
+        this._yamlMode = false;
+        break;
+      case 1:
+        this._yamlMode = true;
+        break;
+    }
+  }
+
   private async _delete(): Promise<void> {
     if (!this._params) {
       return;
@@ -229,7 +348,7 @@ export class HuiDialogEditView extends LitElement {
       );
       this.closeDialog();
       navigate(`/${window.location.pathname.split("/")[1]}`);
-    } catch (err) {
+    } catch (err: any) {
       showAlertDialog(this, {
         text: `Deleting failed: ${err.message}`,
       });
@@ -295,7 +414,7 @@ export class HuiDialogEditView extends LitElement {
         );
       }
       this.closeDialog();
-    } catch (err) {
+    } catch (err: any) {
       showAlertDialog(this, {
         text: `Saving failed: ${err.message}`,
       });
@@ -305,8 +424,13 @@ export class HuiDialogEditView extends LitElement {
   }
 
   private _viewConfigChanged(ev: ViewEditEvent): void {
-    if (ev.detail && ev.detail.config) {
+    if (
+      ev.detail &&
+      ev.detail.config &&
+      !deepEqual(this._config, ev.detail.config)
+    ) {
       this._config = ev.detail.config;
+      this._dirty = true;
     }
   }
 
@@ -316,6 +440,7 @@ export class HuiDialogEditView extends LitElement {
     if (ev.detail.visible && this._config) {
       this._config.visible = ev.detail.visible;
     }
+    this._dirty = true;
   }
 
   private _badgesChanged(ev: EntitiesEditorEvent): void {
@@ -323,6 +448,18 @@ export class HuiDialogEditView extends LitElement {
       return;
     }
     this._badges = processEditorEntities(ev.detail.entities);
+    this._dirty = true;
+  }
+
+  private _viewYamlChanged(ev: CustomEvent) {
+    ev.stopPropagation();
+    if (!ev.detail.isValid) {
+      return;
+    }
+    const { badges = [], ...config } = ev.detail.value;
+    this._config = config;
+    this._badges = badges;
+    this._dirty = true;
   }
 
   private _isConfigChanged(): boolean {
@@ -343,50 +480,30 @@ export class HuiDialogEditView extends LitElement {
     return [
       haStyleDialog,
       css`
+        ha-dialog {
+          /* Set the top top of the dialog to a fixed position, so it doesnt jump when the content changes size */
+          --vertical-align-dialog: flex-start;
+          --dialog-surface-margin-top: 40px;
+        }
+
+        @media all and (max-width: 450px), all and (max-height: 500px) {
+          /* When in fullscreen dialog should be attached to top */
+          ha-dialog {
+            --dialog-surface-margin-top: 0px;
+          }
+        }
+        ha-dialog.yaml-mode {
+          --dialog-content-padding: 0;
+        }
         h2 {
-          display: block;
-          color: var(--primary-text-color);
-          line-height: normal;
-          -moz-osx-font-smoothing: grayscale;
-          -webkit-font-smoothing: antialiased;
-          font-family: Roboto, sans-serif;
-          font-family: var(
-            --mdc-typography-headline6-font-family,
-            var(--mdc-typography-font-family, Roboto, sans-serif)
-          );
-          font-size: 1.25rem;
-          font-size: var(--mdc-typography-headline6-font-size, 1.25rem);
-          line-height: 2rem;
-          line-height: var(--mdc-typography-headline6-line-height, 2rem);
-          font-weight: 500;
-          font-weight: var(--mdc-typography-headline6-font-weight, 500);
-          letter-spacing: 0.0125em;
-          letter-spacing: var(
-            --mdc-typography-headline6-letter-spacing,
-            0.0125em
-          );
-          text-decoration: inherit;
-          text-decoration: var(
-            --mdc-typography-headline6-text-decoration,
-            inherit
-          );
-          text-transform: inherit;
-          text-transform: var(
-            --mdc-typography-headline6-text-transform,
-            inherit
-          );
-          position: relative;
-          flex-shrink: 0;
-          box-sizing: border-box;
           margin: 0;
-          padding: 20px 24px 9px;
-          border-bottom: 1px solid transparent;
+          font-size: inherit;
+          font-weight: inherit;
         }
         paper-tabs {
           --paper-tabs-selection-bar-color: var(--primary-color);
           color: var(--primary-text-color);
           text-transform: uppercase;
-          border-bottom: 1px solid rgba(0, 0, 0, 0.1);
           padding: 0 20px;
         }
         mwc-button.warning {
@@ -397,6 +514,9 @@ export class HuiDialogEditView extends LitElement {
         }
         ha-circular-progress[active] {
           display: block;
+        }
+        .selected_menu_item {
+          color: var(--primary-color);
         }
         .hidden {
           display: none;
@@ -410,10 +530,6 @@ export class HuiDialogEditView extends LitElement {
           justify-content: center;
           margin: 12px 16px;
           flex-wrap: wrap;
-        }
-        .warning {
-          color: var(--warning-color);
-          text-align: center;
         }
 
         @media all and (min-width: 600px) {

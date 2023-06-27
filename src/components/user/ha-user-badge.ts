@@ -4,30 +4,14 @@ import {
   html,
   LitElement,
   PropertyValues,
-  TemplateResult,
+  nothing,
 } from "lit";
 import { customElement, property, state } from "lit/decorators";
 import { classMap } from "lit/directives/class-map";
 import { styleMap } from "lit/directives/style-map";
 import { computeStateDomain } from "../../common/entity/compute_state_domain";
-import { User } from "../../data/user";
+import { computeUserInitials, User } from "../../data/user";
 import { CurrentUser, HomeAssistant } from "../../types";
-
-export const computeInitials = (name: string) => {
-  if (!name) {
-    return "?";
-  }
-  return (
-    name
-      .trim()
-      // Split by space and take first 3 words
-      .split(" ")
-      .slice(0, 3)
-      // Of each word, take first letter
-      .map((s) => s.substr(0, 1))
-      .join("")
-  );
-};
 
 @customElement("ha-user-badge")
 class UserBadge extends LitElement {
@@ -63,9 +47,9 @@ class UserBadge extends LitElement {
     }
   }
 
-  protected render(): TemplateResult {
+  protected render() {
     if (!this.hass || !this.user) {
-      return html``;
+      return nothing;
     }
     const picture = this._personPicture;
 
@@ -75,7 +59,7 @@ class UserBadge extends LitElement {
         class="picture"
       ></div>`;
     }
-    const initials = computeInitials(this.user.name);
+    const initials = computeUserInitials(this.user.name);
     return html`<div
       class="initials ${classMap({ long: initials!.length > 2 })}"
     >

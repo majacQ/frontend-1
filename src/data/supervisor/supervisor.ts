@@ -1,7 +1,10 @@
 import { Connection, getCollection } from "home-assistant-js-websocket";
 import { Store } from "home-assistant-js-websocket/dist/store";
-import { LocalizeFunc } from "../../common/translations/localize";
-import { HomeAssistant } from "../../types";
+import {
+  FlattenObjectKeys,
+  LocalizeFunc,
+} from "../../common/translations/localize";
+import { TranslationDict } from "../../types";
 import { HassioAddonsInfo } from "../hassio/addon";
 import { HassioHassOSInfo, HassioHostInfo } from "../hassio/host";
 import { NetworkInfo } from "../hassio/network";
@@ -57,6 +60,8 @@ export interface SupervisorEvent {
   [key: string]: any;
 }
 
+export type SupervisorKeys = FlattenObjectKeys<TranslationDict["supervisor"]>;
+
 export interface Supervisor {
   host: HassioHostInfo;
   supervisor: HassioSupervisorInfo;
@@ -67,7 +72,7 @@ export interface Supervisor {
   os: HassioHassOSInfo;
   addon: HassioAddonsInfo;
   store: SupervisorStore;
-  localize: LocalizeFunc;
+  localize: LocalizeFunc<SupervisorKeys>;
 }
 
 export const supervisorApiWsRequest = <T>(
@@ -82,7 +87,7 @@ async function processEvent(
   event: SupervisorEvent,
   key: string
 ) {
-  if (event.event !== "supervisor-update" || event.update_key !== key) {
+  if (event.event !== "supervisor_update" || event.update_key !== key) {
     return;
   }
 
@@ -90,7 +95,7 @@ async function processEvent(
     const data = await supervisorApiWsRequest<any>(conn, {
       endpoint: supervisorCollection[key],
     });
-    store.setState(data);
+    store.setState(data, true);
     return;
   }
 
@@ -99,10 +104,7 @@ async function processEvent(
     return;
   }
 
-  store.setState({
-    ...state,
-    ...event.data,
-  });
+  store.setState(event.data);
 }
 
 const subscribeSupervisorEventUpdates = (
@@ -125,17 +127,7 @@ export const getSupervisorEventCollection = (
   getCollection(
     conn,
     `_supervisor${key}Event`,
-    () => supervisorApiWsRequest(conn, { endpoint }),
+    (conn2) => supervisorApiWsRequest(conn2, { endpoint }),
     (connection, store) =>
       subscribeSupervisorEventUpdates(connection, store, key)
-  );
-
-export const subscribeSupervisorEvents = (
-  hass: HomeAssistant,
-  onChange: (event) => void,
-  key: string,
-  endpoint: string
-) =>
-  getSupervisorEventCollection(hass.connection, key, endpoint).subscribe(
-    onChange
   );

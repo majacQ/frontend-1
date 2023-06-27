@@ -1,5 +1,4 @@
 import "@material/mwc-button";
-import "@material/mwc-icon-button";
 import { ActionDetail } from "@material/mwc-list/mwc-list-foundation";
 import "@material/mwc-list/mwc-list-item";
 import { mdiArrowDown, mdiArrowUp, mdiDotsVertical } from "@mdi/js";
@@ -12,9 +11,12 @@ import {
   TemplateResult,
 } from "lit";
 import { customElement, property, queryAssignedNodes } from "lit/decorators";
+import deepClone from "deep-clone-simple";
+import { storage } from "../../../common/decorators/storage";
 import { fireEvent } from "../../../common/dom/fire_event";
 import "../../../components/ha-button-menu";
-import { saveConfig } from "../../../data/lovelace";
+import "../../../components/ha-icon-button";
+import { saveConfig, LovelaceCardConfig } from "../../../data/lovelace";
 import { showAlertDialog } from "../../../dialogs/generic/show-dialog-box";
 import { HomeAssistant } from "../../../types";
 import { showSaveSuccessToast } from "../../../util/toast-saved-success";
@@ -33,6 +35,14 @@ export class HuiCardOptions extends LitElement {
   @property() public path?: [number, number];
 
   @queryAssignedNodes() private _assignedNodes?: NodeListOf<LovelaceCard>;
+
+  @storage({
+    key: "lovelaceClipboard",
+    state: false,
+    subscribe: false,
+    storage: "sessionStorage",
+  })
+  protected _clipboard?: LovelaceCardConfig;
 
   public getCardSize() {
     return this._assignedNodes ? computeCardSize(this._assignedNodes[0]) : 1;
@@ -59,36 +69,35 @@ export class HuiCardOptions extends LitElement {
             )}</mwc-button
           >
           <div>
-            <mwc-icon-button
-              title="Move card down"
+            <slot name="buttons"></slot>
+            <ha-icon-button
+              .label=${this.hass!.localize(
+                "ui.panel.lovelace.editor.edit_card.move_down"
+              )}
+              .path=${mdiArrowDown}
               class="move-arrow"
               @click=${this._cardDown}
-              ?disabled=${this.lovelace!.config.views[this.path![0]].cards!
+              .disabled=${this.lovelace!.config.views[this.path![0]].cards!
                 .length ===
               this.path![1] + 1}
-            >
-              <ha-svg-icon .path=${mdiArrowDown}></ha-svg-icon>
-            </mwc-icon-button>
-            <mwc-icon-button
-              title="Move card up"
+            ></ha-icon-button>
+            <ha-icon-button
+              .label=${this.hass!.localize(
+                "ui.panel.lovelace.editor.edit_card.move_up"
+              )}
+              .path=${mdiArrowUp}
               class="move-arrow"
               @click=${this._cardUp}
               ?disabled=${this.path![1] === 0}
-              ><ha-svg-icon .path=${mdiArrowUp}></ha-svg-icon
-            ></mwc-icon-button>
-            <ha-button-menu corner="BOTTOM_START" @action=${this._handleAction}>
-              <mwc-icon-button
+            ></ha-icon-button>
+            <ha-button-menu @action=${this._handleAction}>
+              <ha-icon-button
                 slot="trigger"
-                aria-label=${this.hass!.localize(
+                .label=${this.hass!.localize(
                   "ui.panel.lovelace.editor.edit_card.options"
                 )}
-                title="${this.hass!.localize(
-                  "ui.panel.lovelace.editor.edit_card.options"
-                )}"
-              >
-                <ha-svg-icon .path=${mdiDotsVertical}></ha-svg-icon>
-              </mwc-icon-button>
-
+                .path=${mdiDotsVertical}
+              ></ha-icon-button>
               <mwc-list-item>
                 ${this.hass!.localize(
                   "ui.panel.lovelace.editor.edit_card.move"
@@ -97,6 +106,16 @@ export class HuiCardOptions extends LitElement {
               <mwc-list-item
                 >${this.hass!.localize(
                   "ui.panel.lovelace.editor.edit_card.duplicate"
+                )}</mwc-list-item
+              >
+              <mwc-list-item
+                >${this.hass!.localize(
+                  "ui.panel.lovelace.editor.edit_card.copy"
+                )}</mwc-list-item
+              >
+              <mwc-list-item
+                >${this.hass!.localize(
+                  "ui.panel.lovelace.editor.edit_card.cut"
                 )}</mwc-list-item
               >
               <mwc-list-item class="delete-item">
@@ -117,7 +136,7 @@ export class HuiCardOptions extends LitElement {
         outline: 2px solid var(--primary-color);
       }
 
-      :host:not(.panel) ::slotted(*) {
+      :host(:not(.panel)) ::slotted(*) {
         display: block;
       }
 
@@ -136,11 +155,11 @@ export class HuiCardOptions extends LitElement {
         align-items: center;
       }
 
-      mwc-icon-button {
+      ha-icon-button {
         color: var(--primary-text-color);
       }
 
-      mwc-icon-button.move-arrow[disabled] {
+      ha-icon-button.move-arrow[disabled] {
         color: var(--disabled-text-color);
       }
 
@@ -164,7 +183,13 @@ export class HuiCardOptions extends LitElement {
         this._duplicateCard();
         break;
       case 2:
-        this._deleteCard();
+        this._copyCard();
+        break;
+      case 3:
+        this._cutCard();
+        break;
+      case 4:
+        this._deleteCard(true);
         break;
     }
   }
@@ -182,6 +207,17 @@ export class HuiCardOptions extends LitElement {
 
   private _editCard(): void {
     fireEvent(this, "ll-edit-card", { path: this.path! });
+  }
+
+  private _cutCard(): void {
+    this._copyCard();
+    this._deleteCard(false);
+  }
+
+  private _copyCard(): void {
+    const cardConfig =
+      this.lovelace!.config.views[this.path![0]].cards![this.path![1]];
+    this._clipboard = deepClone(cardConfig);
   }
 
   private _cardUp(): void {
@@ -228,7 +264,7 @@ export class HuiCardOptions extends LitElement {
             deleteCard(this.lovelace!.config, this.path!)
           );
           showSaveSuccessToast(this, this.hass!);
-        } catch (err) {
+        } catch (err: any) {
           showAlertDialog(this, {
             text: `Moving failed: ${err.message}`,
           });
@@ -237,8 +273,8 @@ export class HuiCardOptions extends LitElement {
     });
   }
 
-  private _deleteCard(): void {
-    fireEvent(this, "ll-delete-card", { path: this.path! });
+  private _deleteCard(confirm: boolean): void {
+    fireEvent(this, "ll-delete-card", { path: this.path!, confirm });
   }
 }
 

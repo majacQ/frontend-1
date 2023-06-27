@@ -1,14 +1,11 @@
 import "@material/mwc-button";
-import "@polymer/app-layout/app-header/app-header";
-import "@polymer/app-layout/app-toolbar/app-toolbar";
-import "@polymer/paper-item/paper-item";
-import "@polymer/paper-item/paper-item-body";
 import { UnsubscribeFunc } from "home-assistant-js-websocket";
 import { css, CSSResultGroup, html, LitElement, TemplateResult } from "lit";
-import { property, state } from "lit/decorators";
+import { customElement, property, state } from "lit/decorators";
 import { fireEvent } from "../../common/dom/fire_event";
 import "../../components/ha-card";
 import "../../components/ha-menu-button";
+import "../../components/ha-top-app-bar-fixed";
 import { isExternal } from "../../data/external";
 import {
   CoreFrontendUserData,
@@ -16,7 +13,6 @@ import {
 } from "../../data/frontend";
 import { RefreshToken } from "../../data/refresh_token";
 import { showConfirmationDialog } from "../../dialogs/generic/show-dialog-box";
-import "../../layouts/ha-app-layout";
 import { haStyle } from "../../resources/styles";
 import { HomeAssistant } from "../../types";
 import "./ha-advanced-mode-row";
@@ -26,15 +22,19 @@ import "./ha-force-narrow-row";
 import "./ha-long-lived-access-tokens-card";
 import "./ha-mfa-modules-card";
 import "./ha-pick-dashboard-row";
+import "./ha-pick-first-weekday-row";
 import "./ha-pick-language-row";
 import "./ha-pick-number-format-row";
 import "./ha-pick-theme-row";
 import "./ha-pick-time-format-row";
+import "./ha-pick-date-format-row";
+import "./ha-pick-time-zone-row";
 import "./ha-push-notifications-row";
 import "./ha-refresh-tokens-card";
 import "./ha-set-suspend-row";
 import "./ha-set-vibrate-row";
 
+@customElement("ha-panel-profile")
 class HaPanelProfile extends LitElement {
   @property({ attribute: false }) public hass!: HomeAssistant;
 
@@ -67,16 +67,13 @@ class HaPanelProfile extends LitElement {
 
   protected render(): TemplateResult {
     return html`
-      <ha-app-layout>
-        <app-header slot="header" fixed>
-          <app-toolbar>
-            <ha-menu-button
-              .hass=${this.hass}
-              .narrow=${this.narrow}
-            ></ha-menu-button>
-            <div main-title>${this.hass.localize("panel.profile")}</div>
-          </app-toolbar>
-        </app-header>
+      <ha-top-app-bar-fixed>
+        <ha-menu-button
+          slot="navigationIcon"
+          .hass=${this.hass}
+          .narrow=${this.narrow}
+        ></ha-menu-button>
+        <div slot="title">${this.hass.localize("panel.profile")}</div>
 
         <div class="content">
           <ha-card .header=${this.hass.user!.name}>
@@ -101,6 +98,18 @@ class HaPanelProfile extends LitElement {
               .narrow=${this.narrow}
               .hass=${this.hass}
             ></ha-pick-time-format-row>
+            <ha-pick-date-format-row
+              .narrow=${this.narrow}
+              .hass=${this.hass}
+            ></ha-pick-date-format-row>
+            <ha-pick-time-zone-row
+              .narrow=${this.narrow}
+              .hass=${this.hass}
+            ></ha-pick-time-zone-row>
+            <ha-pick-first-weekday-row
+              .narrow=${this.narrow}
+              .hass=${this.hass}
+            ></ha-pick-first-weekday-row>
             <ha-pick-theme-row
               .narrow=${this.narrow}
               .hass=${this.hass}
@@ -201,7 +210,7 @@ class HaPanelProfile extends LitElement {
             @hass-refresh-tokens=${this._refreshRefreshTokens}
           ></ha-long-lived-access-tokens-card>
         </div>
-      </ha-app-layout>
+      </ha-top-app-bar-fixed>
     `;
   }
 
@@ -254,5 +263,8 @@ class HaPanelProfile extends LitElement {
     ];
   }
 }
-
-customElements.define("ha-panel-profile", HaPanelProfile);
+declare global {
+  interface HTMLElementTagNameMap {
+    "ha-panel-profile": HaPanelProfile;
+  }
+}

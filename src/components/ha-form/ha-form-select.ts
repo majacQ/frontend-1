@@ -1,77 +1,72 @@
-import "@polymer/paper-item/paper-item";
-import "@polymer/paper-listbox/paper-listbox";
-import { css, CSSResultGroup, html, LitElement, TemplateResult } from "lit";
-import { customElement, property, query } from "lit/decorators";
+import memoizeOne from "memoize-one";
+import { html, LitElement, TemplateResult } from "lit";
+import { customElement, property } from "lit/decorators";
 import { fireEvent } from "../../common/dom/fire_event";
-import "../ha-paper-dropdown-menu";
-import { HaFormElement, HaFormSelectData, HaFormSelectSchema } from "./ha-form";
+import type { HomeAssistant } from "../../types";
+import type {
+  HaFormElement,
+  HaFormSelectData,
+  HaFormSelectSchema,
+} from "./types";
+import type { SelectSelector } from "../../data/selector";
+import "../ha-selector/ha-selector-select";
 
 @customElement("ha-form-select")
 export class HaFormSelect extends LitElement implements HaFormElement {
-  @property() public schema!: HaFormSelectSchema;
+  @property({ attribute: false }) public hass!: HomeAssistant;
+
+  @property({ attribute: false }) public schema!: HaFormSelectSchema;
 
   @property() public data!: HaFormSelectData;
 
-  @property() public label!: string;
+  @property() public label?: string;
 
-  @property() public suffix!: string;
+  @property() public helper?: string;
 
-  @query("ha-paper-dropdown-menu", true) private _input?: HTMLElement;
+  @property({ type: Boolean }) public disabled = false;
 
-  public focus() {
-    if (this._input) {
-      this._input.focus();
-    }
-  }
+  private _selectSchema = memoizeOne(
+    (options): SelectSelector => ({
+      select: {
+        options: options.map((option) => ({
+          value: option[0],
+          label: option[1],
+        })),
+      },
+    })
+  );
 
   protected render(): TemplateResult {
     return html`
-      <ha-paper-dropdown-menu .label=${this.label}>
-        <paper-listbox
-          slot="dropdown-content"
-          attr-for-selected="item-value"
-          .selected=${this.data}
-          @selected-item-changed=${this._valueChanged}
-        >
-          ${
-            // TS doesn't work with union array types https://github.com/microsoft/TypeScript/issues/36390
-            // @ts-ignore
-            this.schema.options!.map(
-              (item: string | [string, string]) => html`
-                <paper-item .itemValue=${this._optionValue(item)}>
-                  ${this._optionLabel(item)}
-                </paper-item>
-              `
-            )
-          }
-        </paper-listbox>
-      </ha-paper-dropdown-menu>
+      <ha-selector-select
+        .hass=${this.hass}
+        .schema=${this.schema}
+        .value=${this.data}
+        .label=${this.label}
+        .helper=${this.helper}
+        .disabled=${this.disabled}
+        .required=${this.schema.required}
+        .selector=${this._selectSchema(this.schema.options)}
+        @value-changed=${this._valueChanged}
+      ></ha-selector-select>
     `;
-  }
-
-  private _optionValue(item: string | [string, string]) {
-    return Array.isArray(item) ? item[0] : item;
-  }
-
-  private _optionLabel(item: string | [string, string]) {
-    return Array.isArray(item) ? item[1] || item[0] : item;
   }
 
   private _valueChanged(ev: CustomEvent) {
-    if (!ev.detail.value) {
+    ev.stopPropagation();
+    let value: string | undefined = ev.detail.value;
+
+    if (value === this.data) {
       return;
     }
-    fireEvent(this, "value-changed", {
-      value: ev.detail.value.itemValue,
-    });
-  }
 
-  static get styles(): CSSResultGroup {
-    return css`
-      ha-paper-dropdown-menu {
-        display: block;
-      }
-    `;
+    if (value === "") {
+      value = undefined;
+    }
+
+    fireEvent(this, "value-changed", {
+      value,
+    });
   }
 }
 

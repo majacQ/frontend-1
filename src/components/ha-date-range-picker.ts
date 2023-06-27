@@ -3,7 +3,13 @@ import "@material/mwc-list/mwc-list";
 import { ActionDetail } from "@material/mwc-list/mwc-list-foundation";
 import "@material/mwc-list/mwc-list-item";
 import { mdiCalendar } from "@mdi/js";
-import "@polymer/paper-input/paper-input";
+import {
+  addDays,
+  endOfDay,
+  endOfWeek,
+  startOfDay,
+  startOfWeek,
+} from "date-fns";
 import {
   css,
   CSSResultGroup,
@@ -13,12 +19,16 @@ import {
   TemplateResult,
 } from "lit";
 import { customElement, property } from "lit/decorators";
+import { calcDate } from "../common/datetime/calc_date";
+import { firstWeekdayIndex } from "../common/datetime/first_weekday";
+import { formatDate } from "../common/datetime/format_date";
 import { formatDateTime } from "../common/datetime/format_date_time";
 import { useAmPm } from "../common/datetime/use_am_pm";
 import { computeRTLDirection } from "../common/util/compute_rtl";
 import { HomeAssistant } from "../types";
 import "./date-range-picker";
 import "./ha-svg-icon";
+import "./ha-textfield";
 
 export interface DateRangePickerRanges {
   [key: string]: [Date, Date];
@@ -32,13 +42,81 @@ export class HaDateRangePicker extends LitElement {
 
   @property() public endDate!: Date;
 
-  @property() public ranges?: DateRangePickerRanges;
+  @property() public ranges?: DateRangePickerRanges | false;
+
+  @property() public autoApply = false;
+
+  @property() public timePicker = true;
 
   @property({ type: Boolean }) public disabled = false;
 
   @property({ type: Boolean }) private _hour24format = false;
 
   @property({ type: String }) private _rtlDirection = "ltr";
+
+  protected willUpdate() {
+    if (!this.hasUpdated && this.ranges === undefined) {
+      const today = new Date();
+      const weekStartsOn = firstWeekdayIndex(this.hass.locale);
+      const weekStart = calcDate(
+        today,
+        startOfWeek,
+        this.hass.locale,
+        this.hass.config,
+        {
+          weekStartsOn,
+        }
+      );
+      const weekEnd = calcDate(
+        today,
+        endOfWeek,
+        this.hass.locale,
+        this.hass.config,
+        {
+          weekStartsOn,
+        }
+      );
+
+      this.ranges = {
+        [this.hass.localize("ui.components.date-range-picker.ranges.today")]: [
+          calcDate(today, startOfDay, this.hass.locale, this.hass.config, {
+            weekStartsOn,
+          }),
+          calcDate(today, endOfDay, this.hass.locale, this.hass.config, {
+            weekStartsOn,
+          }),
+        ],
+        [this.hass.localize(
+          "ui.components.date-range-picker.ranges.yesterday"
+        )]: [
+          calcDate(
+            addDays(today, -1),
+            startOfDay,
+            this.hass.locale,
+            this.hass.config,
+            {
+              weekStartsOn,
+            }
+          ),
+          calcDate(
+            addDays(today, -1),
+            endOfDay,
+            this.hass.locale,
+            this.hass.config,
+            {
+              weekStartsOn,
+            }
+          ),
+        ],
+        [this.hass.localize(
+          "ui.components.date-range-picker.ranges.this_week"
+        )]: [weekStart, weekEnd],
+        [this.hass.localize(
+          "ui.components.date-range-picker.ranges.last_week"
+        )]: [addDays(weekStart, -7), addDays(weekEnd, -7)],
+      };
+    }
+  }
 
   protected updated(changedProps: PropertyValues) {
     if (changedProps.has("hass")) {
@@ -54,31 +132,42 @@ export class HaDateRangePicker extends LitElement {
     return html`
       <date-range-picker
         ?disabled=${this.disabled}
+        ?auto-apply=${this.autoApply}
+        ?time-picker=${this.timePicker}
         twentyfour-hours=${this._hour24format}
         start-date=${this.startDate}
         end-date=${this.endDate}
-        ?ranges=${this.ranges !== undefined}
+        ?ranges=${this.ranges !== false}
+        first-day=${firstWeekdayIndex(this.hass.locale)}
       >
         <div slot="input" class="date-range-inputs">
           <ha-svg-icon .path=${mdiCalendar}></ha-svg-icon>
-          <paper-input
-            .value=${formatDateTime(this.startDate, this.hass.locale)}
+          <ha-textfield
+            .value=${this.timePicker
+              ? formatDateTime(
+                  this.startDate,
+                  this.hass.locale,
+                  this.hass.config
+                )
+              : formatDate(this.startDate, this.hass.locale, this.hass.config)}
             .label=${this.hass.localize(
               "ui.components.date-range-picker.start_date"
             )}
             .disabled=${this.disabled}
             @click=${this._handleInputClick}
             readonly
-          ></paper-input>
-          <paper-input
-            .value=${formatDateTime(this.endDate, this.hass.locale)}
-            label=${this.hass.localize(
+          ></ha-textfield>
+          <ha-textfield
+            .value=${this.timePicker
+              ? formatDateTime(this.endDate, this.hass.locale, this.hass.config)
+              : formatDate(this.endDate, this.hass.locale, this.hass.config)}
+            .label=${this.hass.localize(
               "ui.components.date-range-picker.end_date"
             )}
             .disabled=${this.disabled}
             @click=${this._handleInputClick}
             readonly
-          ></paper-input>
+          ></ha-textfield>
         </div>
         ${this.ranges
           ? html`<div
@@ -140,6 +229,9 @@ export class HaDateRangePicker extends LitElement {
     return css`
       ha-svg-icon {
         margin-right: 8px;
+        margin-inline-end: 8px;
+        margin-inline-start: initial;
+        direction: var(--direction);
       }
 
       .date-range-inputs {
@@ -158,14 +250,17 @@ export class HaDateRangePicker extends LitElement {
         border-top: 1px solid var(--divider-color);
       }
 
-      paper-input {
+      ha-textfield {
         display: inline-block;
         max-width: 250px;
-        min-width: 200px;
+        min-width: 220px;
       }
 
-      paper-input:last-child {
+      ha-textfield:last-child {
         margin-left: 8px;
+        margin-inline-start: 8px;
+        margin-inline-end: initial;
+        direction: var(--direction);
       }
 
       @media only screen and (max-width: 800px) {
@@ -176,7 +271,7 @@ export class HaDateRangePicker extends LitElement {
       }
 
       @media only screen and (max-width: 500px) {
-        paper-input {
+        ha-textfield {
           min-width: inherit;
         }
 

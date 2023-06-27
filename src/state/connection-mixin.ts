@@ -10,19 +10,28 @@ import {
   subscribeServices,
 } from "home-assistant-js-websocket";
 import { fireEvent } from "../common/dom/fire_event";
+import { subscribeAreaRegistry } from "../data/area_registry";
 import { broadcastConnectionStatus } from "../data/connection-status";
+import { subscribeDeviceRegistry } from "../data/device_registry";
+import { subscribeEntityRegistryDisplay } from "../data/entity_registry";
 import { subscribeFrontendUserData } from "../data/frontend";
 import { forwardHaptic } from "../data/haptics";
 import { DEFAULT_PANEL } from "../data/panel";
 import { serviceCallWillDisconnect } from "../data/service";
-import { NumberFormat, TimeFormat } from "../data/translation";
+import {
+  FirstWeekday,
+  NumberFormat,
+  DateFormat,
+  TimeFormat,
+  TimeZone,
+} from "../data/translation";
 import { subscribePanels } from "../data/ws-panels";
 import { translationMetadata } from "../resources/translations-metadata";
-import { Constructor, ServiceCallResponse } from "../types";
+import { Constructor, HomeAssistant, ServiceCallResponse } from "../types";
+import { getLocalLanguage } from "../util/common-translation";
 import { fetchWithAuth } from "../util/fetch-with-auth";
 import { getState } from "../util/ha-pref-storage";
 import hassCallApi from "../util/hass-call-api";
-import { getLocalLanguage } from "../util/hass-translation";
 import { HassBaseEl } from "./hass-base-mixin";
 
 export const connectionMixin = <T extends Constructor<HassBaseEl>>(
@@ -37,6 +46,9 @@ export const connectionMixin = <T extends Constructor<HassBaseEl>>(
         connection: conn,
         connected: true,
         states: null as any,
+        entities: null as any,
+        devices: null as any,
+        areas: null as any,
         config: null as any,
         themes: null as any,
         selectedTheme: null,
@@ -51,6 +63,9 @@ export const connectionMixin = <T extends Constructor<HassBaseEl>>(
           language,
           number_format: NumberFormat.language,
           time_format: TimeFormat.language,
+          date_format: DateFormat.language,
+          time_zone: TimeZone.local,
+          first_weekday: FirstWeekday.language,
         },
         resources: null as any,
         localize: () => "",
@@ -62,6 +77,7 @@ export const connectionMixin = <T extends Constructor<HassBaseEl>>(
         enableShortcuts: true,
         moreInfoEntityId: null,
         hassUrl: (path = "") => new URL(path, auth.data.hassUrl).toString(),
+        // eslint-disable-next-line @typescript-eslint/default-param-last
         callService: async (domain, service, serviceData = {}, target) => {
           if (__DEV__) {
             // eslint-disable-next-line no-console
@@ -81,7 +97,7 @@ export const connectionMixin = <T extends Constructor<HassBaseEl>>(
               serviceData,
               target
             )) as ServiceCallResponse;
-          } catch (err) {
+          } catch (err: any) {
             if (
               err.error?.code === ERR_CONNECTION_LOST &&
               serviceCallWillDisconnect(domain, service)
@@ -151,6 +167,9 @@ export const connectionMixin = <T extends Constructor<HassBaseEl>>(
             integration,
             configFlow
           ),
+        loadFragmentTranslation: (fragment) =>
+          // @ts-ignore
+          this._loadFragmentTranslations(this.hass?.language, fragment),
         ...getState(),
         ...this._pendingHass,
       };
@@ -176,7 +195,51 @@ export const connectionMixin = <T extends Constructor<HassBaseEl>>(
       });
 
       subscribeEntities(conn, (states) => this._updateHass({ states }));
-      subscribeConfig(conn, (config) => this._updateHass({ config }));
+      subscribeEntityRegistryDisplay(conn, (entityReg) => {
+        const entities: HomeAssistant["entities"] = {};
+        for (const entity of entityReg.entities) {
+          entities[entity.ei] = {
+            entity_id: entity.ei,
+            device_id: entity.di,
+            area_id: entity.ai,
+            translation_key: entity.tk,
+            platform: entity.pl,
+            entity_category:
+              entity.ec !== undefined
+                ? entityReg.entity_categories[entity.ec]
+                : undefined,
+            name: entity.en,
+            hidden: entity.hb,
+            display_precision: entity.dp,
+          };
+        }
+        this._updateHass({ entities });
+      });
+      subscribeDeviceRegistry(conn, (deviceReg) => {
+        const devices: HomeAssistant["devices"] = {};
+        for (const device of deviceReg) {
+          devices[device.id] = device;
+        }
+        this._updateHass({ devices });
+      });
+      subscribeAreaRegistry(conn, (areaReg) => {
+        const areas: HomeAssistant["areas"] = {};
+        for (const area of areaReg) {
+          areas[area.area_id] = area;
+        }
+        this._updateHass({ areas });
+      });
+      subscribeConfig(conn, (config) => {
+        if (this.hass?.config?.time_zone !== config.time_zone) {
+          import("../resources/intl-polyfill").then(() => {
+            if ("__setDefaultTimeZone" in Intl.DateTimeFormat) {
+              // @ts-ignore
+              Intl.DateTimeFormat.__setDefaultTimeZone(config.time_zone);
+            }
+          });
+        }
+        this._updateHass({ config });
+      });
       subscribeServices(conn, (services) => this._updateHass({ services }));
       subscribePanels(conn, (panels) => this._updateHass({ panels }));
       subscribeFrontendUserData(conn, "core", (userData) =>
@@ -194,6 +257,7 @@ export const connectionMixin = <T extends Constructor<HassBaseEl>>(
       // @ts-ignore
       this.hass!.callWS({ type: "get_config" }).then((config: HassConfig) => {
         this._updateHass({ config });
+        this.checkDataBaseMigration();
       });
     }
 

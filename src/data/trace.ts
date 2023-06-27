@@ -4,6 +4,7 @@ import {
   BlueprintAutomationConfig,
   ManualAutomationConfig,
 } from "./automation";
+import { BlueprintScriptConfig, ScriptConfig } from "./script";
 
 interface BaseTraceStep {
   path: string;
@@ -15,6 +16,7 @@ interface BaseTraceStep {
 export interface TriggerTraceStep extends BaseTraceStep {
   changed_variables: {
     trigger: {
+      alias?: string;
       description: string;
       [key: string]: unknown;
     };
@@ -43,6 +45,14 @@ export interface ChooseActionTraceStep extends BaseTraceStep {
   result?: { choice: number | "default" };
 }
 
+export interface IfActionTraceStep extends BaseTraceStep {
+  result?: { choice: "then" | "else" };
+}
+
+export interface StopActionTraceStep extends BaseTraceStep {
+  result?: { stop: string; error: boolean };
+}
+
 export interface ChooseChoiceActionTraceStep extends BaseTraceStep {
   result?: { result: boolean };
 }
@@ -54,7 +64,7 @@ export type ActionTraceStep =
   | ChooseActionTraceStep
   | ChooseChoiceActionTraceStep;
 
-export interface AutomationTrace {
+interface BaseTrace {
   domain: string;
   item_id: string;
   last_step: string | null;
@@ -81,22 +91,45 @@ export interface AutomationTrace {
     // The exception is in the trace itself or in the last element of the trace
     // Script execution stopped by async_stop called on the script run because home assistant is shutting down, script mode is SCRIPT_MODE_RESTART etc:
     | "cancelled";
-  // Automation only, should become it's own type when we support script in frontend
+}
+
+interface BaseTraceExtended {
+  trace: Record<string, ActionTraceStep[]>;
+  context: Context;
+  error?: string;
+}
+
+export interface AutomationTrace extends BaseTrace {
+  domain: "automation";
   trigger: string;
 }
 
-export interface AutomationTraceExtended extends AutomationTrace {
-  trace: Record<string, ActionTraceStep[]>;
-  context: Context;
+export interface AutomationTraceExtended
+  extends AutomationTrace,
+    BaseTraceExtended {
   config: ManualAutomationConfig;
   blueprint_inputs?: BlueprintAutomationConfig;
-  error?: string;
 }
+
+export interface ScriptTrace extends BaseTrace {
+  domain: "script";
+}
+
+export interface ScriptTraceExtended extends ScriptTrace, BaseTraceExtended {
+  config: ScriptConfig;
+  blueprint_inputs?: BlueprintScriptConfig;
+}
+
+export type TraceExtended = AutomationTraceExtended | ScriptTraceExtended;
 
 interface TraceTypes {
   automation: {
     short: AutomationTrace;
     extended: AutomationTraceExtended;
+  };
+  script: {
+    short: ScriptTrace;
+    extended: ScriptTraceExtended;
   };
 }
 
@@ -141,7 +174,7 @@ export const loadTraceContexts = (
   });
 
 export const getDataFromPath = (
-  config: ManualAutomationConfig,
+  config: TraceExtended["config"],
   path: string
 ): any => {
   const parts = path.split("/").reverse();
@@ -153,7 +186,11 @@ export const getDataFromPath = (
     const asNumber = Number(raw);
 
     if (isNaN(asNumber)) {
-      result = result[raw];
+      const tempResult = result[raw];
+      if (!tempResult && raw === "sequence") {
+        continue;
+      }
+      result = tempResult;
       continue;
     }
 

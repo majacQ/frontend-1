@@ -1,6 +1,7 @@
 import "@material/mwc-tab-bar/mwc-tab-bar";
 import "@material/mwc-tab/mwc-tab";
-import { css, CSSResultGroup, html, LitElement, TemplateResult } from "lit";
+import { mdiClose } from "@mdi/js";
+import { css, CSSResultGroup, html, LitElement, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators";
 import { cache } from "lit/directives/cache";
 import { classMap } from "lit/directives/class-map";
@@ -10,7 +11,7 @@ import { computeDomain } from "../../../../common/entity/compute_domain";
 import { computeStateName } from "../../../../common/entity/compute_state_name";
 import { DataTableRowData } from "../../../../components/data-table/ha-data-table";
 import "../../../../components/ha-dialog";
-import "../../../../components/ha-header-bar";
+import "../../../../components/ha-dialog-header";
 import type { LovelaceViewConfig } from "../../../../data/lovelace";
 import type { HassDialog } from "../../../../dialogs/make-dialog-manager";
 import { haStyleDialog } from "../../../../resources/styles";
@@ -34,7 +35,8 @@ interface SelectedChangedEvent {
 @customElement("hui-dialog-create-card")
 export class HuiCreateDialogCard
   extends LitElement
-  implements HassDialog<CreateCardDialogParams> {
+  implements HassDialog<CreateCardDialogParams>
+{
   @property({ attribute: false }) protected hass!: HomeAssistant;
 
   @state() private _params?: CreateCardDialogParams;
@@ -54,14 +56,23 @@ export class HuiCreateDialogCard
   public closeDialog(): boolean {
     this._params = undefined;
     this._currTabIndex = 0;
+    this._selectedEntities = [];
     fireEvent(this, "dialog-closed", { dialog: this.localName });
     return true;
   }
 
-  protected render(): TemplateResult {
+  protected render() {
     if (!this._params) {
-      return html``;
+      return nothing;
     }
+
+    const title = this._viewConfig.title
+      ? this.hass!.localize(
+          "ui.panel.lovelace.editor.edit_card.pick_card_view_title",
+          "name",
+          `"${this._viewConfig.title}"`
+        )
+      : this.hass!.localize("ui.panel.lovelace.editor.edit_card.pick_card");
 
     return html`
       <ha-dialog
@@ -69,32 +80,26 @@ export class HuiCreateDialogCard
         scrimClickAction
         @keydown=${this._ignoreKeydown}
         @closed=${this._cancel}
-        .heading=${true}
+        .heading=${title}
         class=${classMap({ table: this._currTabIndex === 1 })}
       >
-        <div slot="heading">
-          <ha-header-bar>
-            <span slot="title">
-              ${this._viewConfig.title
-                ? this.hass!.localize(
-                    "ui.panel.lovelace.editor.edit_card.pick_card_view_title",
-                    "name",
-                    `"${this._viewConfig.title}"`
-                  )
-                : this.hass!.localize(
-                    "ui.panel.lovelace.editor.edit_card.pick_card"
-                  )}
-            </span>
-          </ha-header-bar>
+        <ha-dialog-header show-border slot="heading">
+          <ha-icon-button
+            slot="navigationIcon"
+            dialogAction="cancel"
+            .label=${this.hass.localize("ui.common.close")}
+            .path=${mdiClose}
+          ></ha-icon-button>
+          <span slot="title"> ${title} </span>
           <mwc-tab-bar
             .activeIndex=${this._currTabIndex}
-            @MDCTabBar:activated=${(ev: CustomEvent) =>
-              this._handleTabChanged(ev)}
+            @MDCTabBar:activated=${this._handleTabChanged}
           >
             <mwc-tab
               .label=${this.hass!.localize(
                 "ui.panel.lovelace.editor.cardpicker.by_card"
               )}
+              dialogInitialFocus
             ></mwc-tab>
             <mwc-tab
               .label=${this.hass!.localize(
@@ -102,7 +107,7 @@ export class HuiCreateDialogCard
               )}
             ></mwc-tab>
           </mwc-tab-bar>
-        </div>
+        </ha-dialog-header>
         ${cache(
           this._currTabIndex === 0
             ? html`
@@ -164,19 +169,11 @@ export class HuiCreateDialogCard
         ha-dialog {
           --mdc-dialog-max-width: 845px;
           --dialog-content-padding: 2px 24px 20px 24px;
-          --dialog-z-index: 5;
+          --dialog-z-index: 6;
         }
 
         ha-dialog.table {
           --dialog-content-padding: 0;
-        }
-
-        ha-header-bar {
-          --mdc-theme-on-primary: var(--primary-text-color);
-          --mdc-theme-primary: var(--mdc-theme-surface);
-          flex-shrink: 0;
-          border-bottom: 1px solid
-            var(--mdc-dialog-scroll-divider-color, rgba(0, 0, 0, 0.12));
         }
 
         @media (min-width: 1200px) {
@@ -186,19 +183,14 @@ export class HuiCreateDialogCard
           }
         }
 
-        .header_button {
-          color: inherit;
-          text-decoration: none;
+        hui-card-picker {
+          --card-picker-search-shape: 0;
+          --card-picker-search-margin: -2px -24px 0;
         }
-
-        mwc-tab-bar {
-          border-bottom: 1px solid
-            var(--mdc-dialog-scroll-divider-color, rgba(0, 0, 0, 0.12));
-        }
-
         hui-entity-picker-table {
           display: block;
           height: calc(100vh - 198px);
+          --mdc-shape-small: 0;
         }
         @media all and (max-width: 450px), all and (max-height: 500px) {
           hui-entity-picker-table {

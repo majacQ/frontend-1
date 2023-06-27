@@ -1,13 +1,18 @@
-import { isNavigationClick } from "../common/dom/is-navigation-click";
 import { html, PropertyValues } from "lit";
 import { customElement, state } from "lit/decorators";
+import { isNavigationClick } from "../common/dom/is-navigation-click";
 import { navigate } from "../common/navigate";
 import { getStorageDefaultPanelUrlPath } from "../data/panel";
+import { getRecorderInfo } from "../data/recorder";
 import "../resources/custom-card-support";
 import { HassElement } from "../state/hass-element";
 import QuickBarMixin from "../state/quick-bar-mixin";
 import { HomeAssistant, Route } from "../types";
 import { storeState } from "../util/ha-pref-storage";
+import {
+  renderLaunchScreenInfoBox,
+  removeLaunchScreen,
+} from "../util/launch-screen";
 import {
   registerServiceWorker,
   supportsServiceWorker,
@@ -17,20 +22,18 @@ import "./home-assistant-main";
 
 const useHash = __DEMO__;
 const curPath = () =>
-  window.decodeURIComponent(
-    useHash ? location.hash.substr(1) : location.pathname
-  );
+  useHash ? location.hash.substring(1) : location.pathname;
 
 const panelUrl = (path: string) => {
   const dividerPos = path.indexOf("/", 1);
-  return dividerPos === -1 ? path.substr(1) : path.substr(1, dividerPos - 1);
+  return dividerPos === -1 ? path.substring(1) : path.substring(1, dividerPos);
 };
 
 @customElement("home-assistant")
 export class HomeAssistantAppEl extends QuickBarMixin(HassElement) {
   @state() private _route: Route;
 
-  @state() private _error = false;
+  @state() private _databaseMigration?: boolean;
 
   private _panelUrl: string;
 
@@ -45,7 +48,9 @@ export class HomeAssistantAppEl extends QuickBarMixin(HassElement) {
     const path = curPath();
 
     if (["", "/"].includes(path)) {
-      navigate(`/${getStorageDefaultPanelUrlPath()}`, { replace: true });
+      navigate(`/${getStorageDefaultPanelUrlPath()}${location.search}`, {
+        replace: true,
+      });
     }
     this._route = {
       prefix: "",
@@ -54,25 +59,45 @@ export class HomeAssistantAppEl extends QuickBarMixin(HassElement) {
     this._panelUrl = panelUrl(path);
   }
 
-  protected render() {
-    const hass = this.hass;
-
-    return hass && hass.states && hass.config && hass.services
-      ? html`
-          <home-assistant-main
-            .hass=${this.hass}
-            .route=${this._route}
-          ></home-assistant-main>
-        `
-      : html`<ha-init-page .error=${this._error}></ha-init-page>`;
+  protected renderHass() {
+    return html`
+      <home-assistant-main
+        .hass=${this.hass}
+        .route=${this._route}
+      ></home-assistant-main>
+    `;
   }
 
-  protected firstUpdated(changedProps) {
+  willUpdate(changedProps: PropertyValues<this>) {
+    if (
+      this._databaseMigration === undefined &&
+      changedProps.has("hass") &&
+      this.hass?.config &&
+      changedProps.get("hass")?.config !== this.hass?.config
+    ) {
+      this.checkDataBaseMigration();
+    }
+  }
+
+  update(changedProps: PropertyValues<this>) {
+    if (
+      this.hass?.states &&
+      this.hass.config &&
+      this.hass.services &&
+      this._databaseMigration === false
+    ) {
+      this.render = this.renderHass;
+      this.update = super.update;
+      removeLaunchScreen();
+    }
+    super.update(changedProps);
+  }
+
+  protected firstUpdated(changedProps: PropertyValues<this>) {
     super.firstUpdated(changedProps);
     this._initializeHass();
     setTimeout(() => registerServiceWorker(this), 1000);
-    /* polyfill for paper-dropdown */
-    import("web-animations-js/web-animations-next-lite.min");
+
     this.addEventListener("hass-suspend-when-hidden", (ev) => {
       this._updateHass({ suspendWhenHidden: ev.detail.suspend });
       storeState(this.hass!);
@@ -109,6 +134,12 @@ export class HomeAssistantAppEl extends QuickBarMixin(HassElement) {
         navigate(href);
       }
     });
+
+    // Render launch screen info box (loading data / error message)
+    // if Home Assistant is not loaded yet.
+    if (this.render !== this.renderHass) {
+      this._renderInitInfo(false);
+    }
   }
 
   protected updated(changedProps: PropertyValues): void {
@@ -119,10 +150,24 @@ export class HomeAssistantAppEl extends QuickBarMixin(HassElement) {
         changedProps.get("hass") as HomeAssistant | undefined
       );
     }
+    if (changedProps.has("_databaseMigration")) {
+      if (this.render !== this.renderHass) {
+        this._renderInitInfo(false);
+      } else if (this._databaseMigration) {
+        // we already removed the launch screen, so we refresh to add it again to show the migration screen
+        location.reload();
+      }
+    }
   }
 
   protected hassConnected() {
     super.hassConnected();
+    // @ts-ignore
+    this._loadHassTranslations(this.hass!.language, "entity_component");
+    // @ts-ignore
+    this._loadHassTranslations(this.hass!.language, "entity");
+
+    // Backwards compatibility for custom integrations
     // @ts-ignore
     this._loadHassTranslations(this.hass!.language, "state");
 
@@ -145,12 +190,28 @@ export class HomeAssistantAppEl extends QuickBarMixin(HassElement) {
           if (registration) {
             registration.update();
           } else {
+            // @ts-ignore Firefox supports forceGet
             location.reload(true);
           }
         });
       } else {
+        // @ts-ignore Firefox supports forceGet
         location.reload(true);
       }
+    }
+  }
+
+  protected async checkDataBaseMigration() {
+    if (this.hass?.config?.components.includes("recorder")) {
+      const info = await getRecorderInfo(this.hass);
+      this._databaseMigration =
+        info.migration_in_progress && !info.migration_is_live;
+      if (this._databaseMigration) {
+        // check every 5 seconds if the migration is done
+        setTimeout(() => this.checkDataBaseMigration(), 5000);
+      }
+    } else {
+      this._databaseMigration = false;
     }
   }
 
@@ -161,7 +222,7 @@ export class HomeAssistantAppEl extends QuickBarMixin(HassElement) {
       if (window.hassConnection) {
         result = await window.hassConnection;
       } else {
-        // In the edge case that
+        // In the edge case that core.ts loads before app.ts
         result = await new Promise((resolve) => {
           window.hassConnectionReady = resolve;
         });
@@ -170,8 +231,8 @@ export class HomeAssistantAppEl extends QuickBarMixin(HassElement) {
       const { auth, conn } = result;
       this._haVersion = conn.haVersion;
       this.initializeHass(auth, conn);
-    } catch (err) {
-      this._error = true;
+    } catch (err: any) {
+      this._renderInitInfo(true);
     }
   }
 
@@ -211,6 +272,7 @@ export class HomeAssistantAppEl extends QuickBarMixin(HassElement) {
     if (!this.hass!.connection.connected) {
       return;
     }
+    window.stop();
     this.hass!.connection.suspend();
   }
 
@@ -225,6 +287,15 @@ export class HomeAssistantAppEl extends QuickBarMixin(HassElement) {
       this._visiblePromiseResolve();
       this._visiblePromiseResolve = undefined;
     }
+  }
+
+  private _renderInitInfo(error: boolean) {
+    renderLaunchScreenInfoBox(
+      html`<ha-init-page
+        .error=${error}
+        .migration=${this._databaseMigration}
+      ></ha-init-page>`
+    );
   }
 }
 

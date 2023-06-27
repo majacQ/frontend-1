@@ -1,8 +1,11 @@
-import { css, CSSResultGroup, html, LitElement, TemplateResult } from "lit";
-import { customElement, property } from "lit/decorators";
+import { css, CSSResultGroup, html, LitElement, nothing } from "lit";
+import { customElement, property, state } from "lit/decorators";
+import { ifDefined } from "lit/directives/if-defined";
 import { styleMap } from "lit/directives/style-map";
 import parseAspectRatio from "../../../common/util/parse-aspect-ratio";
+import "../../../components/ha-alert";
 import "../../../components/ha-card";
+import type { HomeAssistant } from "../../../types";
 import { LovelaceCard, LovelaceCardEditor } from "../types";
 import { IframeCardConfig } from "./types";
 
@@ -24,7 +27,9 @@ export class HuiIframeCard extends LitElement implements LovelaceCard {
   @property({ type: Boolean, reflect: true })
   public isPanel = false;
 
-  @property() protected _config?: IframeCardConfig;
+  @property() public hass?: HomeAssistant;
+
+  @state() protected _config?: IframeCardConfig;
 
   public getCardSize(): number {
     if (!this._config) {
@@ -44,9 +49,9 @@ export class HuiIframeCard extends LitElement implements LovelaceCard {
     this._config = config;
   }
 
-  protected render(): TemplateResult {
-    if (!this._config) {
-      return html``;
+  protected render() {
+    if (!this._config || !this.hass) {
+      return nothing;
     }
 
     let padding = "";
@@ -59,18 +64,40 @@ export class HuiIframeCard extends LitElement implements LovelaceCard {
       padding = "50%";
     }
 
+    const target_protocol = new URL(this._config.url, location.toString())
+      .protocol;
+    if (location.protocol === "https:" && target_protocol !== "https:") {
+      return html`
+        <ha-alert alert-type="error">
+          ${this.hass!.localize(
+            "ui.panel.lovelace.cards.iframe.error_secure_context",
+            {
+              target_protocol,
+              context_protocol: location.protocol,
+            }
+          )}
+        </ha-alert>
+      `;
+    }
+
+    let sandbox_user_params = "";
+    if (this._config.allow_open_top_navigation) {
+      sandbox_user_params += "allow-top-navigation-by-user-activation";
+    }
+
     return html`
-      <ha-card .header="${this._config.title}">
+      <ha-card .header=${this._config.title}>
         <div
           id="root"
-          style="${styleMap({
+          style=${styleMap({
             "padding-top": padding,
-          })}"
+          })}
         >
           <iframe
-            src="${this._config.url}"
-            sandbox="allow-forms allow-modals allow-popups allow-pointer-lock allow-same-origin allow-scripts"
-            allowfullscreen="true"
+            title=${ifDefined(this._config.title)}
+            src=${this._config.url}
+            sandbox="${sandbox_user_params} allow-forms allow-modals allow-popups allow-pointer-lock allow-same-origin allow-scripts"
+            allow="fullscreen"
           ></iframe>
         </div>
       </ha-card>

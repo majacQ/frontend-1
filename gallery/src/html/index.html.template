@@ -7,9 +7,10 @@
       content="width=device-width, initial-scale=1, shrink-to-fit=no"
     />
     <meta name="theme-color" content="#2157BC" />
-    <title>HAGallery</title>
-
-    <script type="module" src="<%= latestGalleryJS %>"></script>
+    <title>Home Assistant Design</title>
+    <% for (const entry of latestEntryJS) { %>
+      <script type="module" src="<%= entry %>"></script>
+    <% } %>
     <style>
       body {
         font-family: Roboto, Noto, sans-serif;

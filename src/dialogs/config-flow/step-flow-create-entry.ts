@@ -1,13 +1,11 @@
 import "@material/mwc-button";
-import "@polymer/paper-dropdown-menu/paper-dropdown-menu-light";
-import "@polymer/paper-item/paper-item";
-import "@polymer/paper-listbox/paper-listbox";
 import { css, CSSResultGroup, html, LitElement, TemplateResult } from "lit";
 import { customElement, property } from "lit/decorators";
 import { fireEvent } from "../../common/dom/fire_event";
 import "../../components/ha-area-picker";
 import { DataEntryFlowStepCreateEntry } from "../../data/data_entry_flow";
 import {
+  computeDeviceName,
   DeviceRegistryEntry,
   updateDeviceRegistryEntry,
 } from "../../data/device_registry";
@@ -18,22 +16,19 @@ import { configFlowContentStyles } from "./styles";
 
 @customElement("step-flow-create-entry")
 class StepFlowCreateEntry extends LitElement {
-  public flowConfig!: FlowConfig;
+  @property({ attribute: false }) public flowConfig!: FlowConfig;
 
-  @property()
-  public hass!: HomeAssistant;
+  @property({ attribute: false }) public hass!: HomeAssistant;
 
-  @property()
-  public step!: DataEntryFlowStepCreateEntry;
+  @property({ attribute: false }) public step!: DataEntryFlowStepCreateEntry;
 
-  @property()
-  public devices!: DeviceRegistryEntry[];
+  @property({ attribute: false }) public devices!: DeviceRegistryEntry[];
 
   protected render(): TemplateResult {
     const localize = this.hass.localize;
 
     return html`
-      <h2>Success!</h2>
+      <h2>${localize("ui.panel.config.integrations.config_flow.success")}!</h2>
       <div class="content">
         ${this.flowConfig.renderCreateEntryDescription(this.hass, this.step)}
         ${this.step.result?.state === "not_loaded"
@@ -46,19 +41,29 @@ class StepFlowCreateEntry extends LitElement {
         ${this.devices.length === 0
           ? ""
           : html`
-              <p>We found the following devices:</p>
+              <p>
+                ${localize(
+                  "ui.panel.config.integrations.config_flow.found_following_devices"
+                )}:
+              </p>
               <div class="devices">
                 ${this.devices.map(
                   (device) =>
                     html`
                       <div class="device">
                         <div>
-                          <b>${device.name}</b><br />
-                          ${device.model} (${device.manufacturer})
+                          <b>${computeDeviceName(device, this.hass)}</b><br />
+                          ${!device.model && !device.manufacturer
+                            ? html`&nbsp;`
+                            : html`${device.model}
+                              ${device.manufacturer
+                                ? html`(${device.manufacturer})`
+                                : ""}`}
                         </div>
                         <ha-area-picker
                           .hass=${this.hass}
                           .device=${device.id}
+                          .value=${device.area_id ?? undefined}
                           @value-changed=${this._areaPicked}
                         ></ha-area-picker>
                       </div>
@@ -68,7 +73,7 @@ class StepFlowCreateEntry extends LitElement {
             `}
       </div>
       <div class="buttons">
-        <mwc-button @click="${this._flowDone}"
+        <mwc-button @click=${this._flowDone}
           >${localize(
             "ui.panel.config.integrations.config_flow.finish"
           )}</mwc-button
@@ -90,7 +95,7 @@ class StepFlowCreateEntry extends LitElement {
       await updateDeviceRegistryEntry(this.hass, device, {
         area_id: area,
       });
-    } catch (err) {
+    } catch (err: any) {
       showAlertDialog(this, {
         text: this.hass.localize(
           "ui.panel.config.integrations.config_flow.error_saving_area",
@@ -123,13 +128,6 @@ class StepFlowCreateEntry extends LitElement {
         }
         .buttons > *:last-child {
           margin-left: auto;
-        }
-        paper-dropdown-menu-light {
-          cursor: pointer;
-        }
-        paper-item {
-          cursor: pointer;
-          white-space: nowrap;
         }
         @media all and (max-width: 450px), all and (max-height: 500px) {
           .device {

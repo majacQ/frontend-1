@@ -1,6 +1,5 @@
-import { css, CSSResultGroup, html, LitElement, TemplateResult } from "lit";
+import { css, CSSResultGroup, html, LitElement, nothing } from "lit";
 import { customElement, state } from "lit/decorators";
-import "../../../components/ha-icon";
 import { HomeAssistant } from "../../../types";
 import { LovelaceRow, SectionConfig } from "../entity-rows/types";
 
@@ -18,16 +17,20 @@ class HuiSectionRow extends LitElement implements LovelaceRow {
     this._config = config;
   }
 
-  protected render(): TemplateResult {
+  protected render() {
     if (!this._config) {
-      return html``;
+      return nothing;
     }
 
     return html`
       <div class="divider"></div>
       ${this._config.label
-        ? html` <div class="label">${this._config.label}</div> `
-        : html``}
+        ? html`
+            <div class="label" .title=${this._config.label}>
+              ${this._config.label}
+            </div>
+          `
+        : nothing}
     `;
   }
 

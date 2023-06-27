@@ -1,5 +1,5 @@
 import "@material/mwc-button/mwc-button";
-import { CSSResultGroup, html, LitElement, TemplateResult } from "lit";
+import { CSSResultGroup, html, LitElement, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators";
 import { fireEvent } from "../../../../common/dom/fire_event";
 import "../../../../components/ha-dialog";
@@ -10,6 +10,7 @@ import {
   fetchDeviceActions,
   fetchDeviceConditions,
   fetchDeviceTriggers,
+  sortDeviceAutomations,
 } from "../../../../data/device_automation";
 import { haStyleDialog } from "../../../../resources/styles";
 import { HomeAssistant } from "../../../../types";
@@ -60,25 +61,25 @@ export class DialogDeviceAutomation extends LitElement {
       return;
     }
 
-    const { deviceId, script } = this._params;
+    const { device, script } = this._params;
 
-    fetchDeviceActions(this.hass, deviceId).then((actions) => {
-      this._actions = actions;
+    fetchDeviceActions(this.hass, device.id).then((actions) => {
+      this._actions = actions.sort(sortDeviceAutomations);
     });
     if (script) {
       return;
     }
-    fetchDeviceTriggers(this.hass, deviceId).then((triggers) => {
-      this._triggers = triggers;
+    fetchDeviceTriggers(this.hass, device.id).then((triggers) => {
+      this._triggers = triggers.sort(sortDeviceAutomations);
     });
-    fetchDeviceConditions(this.hass, deviceId).then((conditions) => {
-      this._conditions = conditions;
+    fetchDeviceConditions(this.hass, device.id).then((conditions) => {
+      this._conditions = conditions.sort(sortDeviceAutomations);
     });
   }
 
-  protected render(): TemplateResult | void {
+  protected render() {
     if (!this._params) {
-      return html``;
+      return nothing;
     }
 
     return html`
@@ -88,10 +89,17 @@ export class DialogDeviceAutomation extends LitElement {
         .heading=${this.hass.localize(
           `ui.panel.config.devices.${
             this._params.script ? "script" : "automation"
-          }.create`
+          }.create`,
+          {
+            type: this.hass.localize(
+              `ui.panel.config.devices.type.${
+                this._params.device.entry_type || "device"
+              }`
+            ),
+          }
         )}
       >
-        <div @chip-clicked=${this.closeDialog}>
+        <div @entry-selected=${this.closeDialog}>
           ${this._triggers.length ||
           this._conditions.length ||
           this._actions.length

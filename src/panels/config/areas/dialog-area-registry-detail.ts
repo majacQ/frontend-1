@@ -1,21 +1,37 @@
 import "@material/mwc-button";
-import "@polymer/paper-dialog-scrollable/paper-dialog-scrollable";
-import "@polymer/paper-input/paper-input";
-import { css, CSSResultGroup, html, LitElement, TemplateResult } from "lit";
+import "@material/mwc-list/mwc-list";
+import { mdiPencil } from "@mdi/js";
+import { css, CSSResultGroup, html, LitElement, nothing } from "lit";
 import { property, state } from "lit/decorators";
 import { fireEvent } from "../../../common/dom/fire_event";
-import { navigate } from "../../../common/navigate";
-import "../../../components/ha-dialog";
+import { stringCompare } from "../../../common/string/compare";
+import "../../../components/ha-alert";
+import { createCloseHeading } from "../../../components/ha-dialog";
+import "../../../components/ha-picture-upload";
+import type { HaPictureUpload } from "../../../components/ha-picture-upload";
+import "../../../components/ha-textfield";
 import { AreaRegistryEntryMutableParams } from "../../../data/area_registry";
-import { PolymerChangedEvent } from "../../../polymer-types";
+import { showAliasesDialog } from "../../../dialogs/aliases/show-dialog-aliases";
+import { CropOptions } from "../../../dialogs/image-cropper-dialog/show-image-cropper-dialog";
+import { ValueChangedEvent, HomeAssistant } from "../../../types";
 import { haStyleDialog } from "../../../resources/styles";
-import { HomeAssistant } from "../../../types";
 import { AreaRegistryDetailDialogParams } from "./show-dialog-area-registry-detail";
+
+const cropOptions: CropOptions = {
+  round: false,
+  type: "image/jpeg",
+  quality: 0.75,
+  aspectRatio: 1.78,
+};
 
 class DialogAreaDetail extends LitElement {
   @property({ attribute: false }) public hass!: HomeAssistant;
 
   @state() private _name!: string;
+
+  @state() private _aliases!: string[];
+
+  @state() private _picture!: string | null;
 
   @state() private _error?: string;
 
@@ -29,6 +45,8 @@ class DialogAreaDetail extends LitElement {
     this._params = params;
     this._error = undefined;
     this._name = this._params.entry ? this._params.entry.name : "";
+    this._aliases = this._params.entry ? this._params.entry.aliases : [];
+    this._picture = this._params.entry?.picture || null;
     await this.updateComplete;
   }
 
@@ -38,9 +56,9 @@ class DialogAreaDetail extends LitElement {
     fireEvent(this, "dialog-closed", { dialog: this.localName });
   }
 
-  protected render(): TemplateResult {
+  protected render() {
     if (!this._params) {
-      return html``;
+      return nothing;
     }
     const entry = this._params.entry;
     const nameInvalid = !this._isNameValid();
@@ -48,12 +66,17 @@ class DialogAreaDetail extends LitElement {
       <ha-dialog
         open
         @closed=${this.closeDialog}
-        .heading=${entry
-          ? entry.name
-          : this.hass.localize("ui.panel.config.areas.editor.default_name")}
+        .heading=${createCloseHeading(
+          this.hass,
+          entry
+            ? entry.name
+            : this.hass.localize("ui.panel.config.areas.editor.default_name")
+        )}
       >
         <div>
-          ${this._error ? html` <div class="error">${this._error}</div> ` : ""}
+          ${this._error
+            ? html`<ha-alert alert-type="error">${this._error}</ha-alert>`
+            : ""}
           <div class="form">
             ${entry
               ? html`
@@ -66,16 +89,57 @@ class DialogAreaDetail extends LitElement {
                 `
               : ""}
 
-            <paper-input
+            <ha-textfield
               .value=${this._name}
-              @value-changed=${this._nameChanged}
-              @keyup=${this._handleKeyup}
+              @input=${this._nameChanged}
               .label=${this.hass.localize("ui.panel.config.areas.editor.name")}
               .errorMessage=${this.hass.localize(
                 "ui.panel.config.areas.editor.name_required"
               )}
               .invalid=${nameInvalid}
-            ></paper-input>
+              dialogInitialFocus
+            ></ha-textfield>
+
+            <div class="label">
+              ${this.hass.localize(
+                "ui.panel.config.areas.editor.aliases_section"
+              )}
+            </div>
+            <mwc-list class="aliases" @action=${this._handleAliasesClicked}>
+              <mwc-list-item .twoline=${this._aliases.length > 0} hasMeta>
+                <span>
+                  ${this._aliases.length > 0
+                    ? this.hass.localize(
+                        "ui.panel.config.areas.editor.configured_aliases",
+                        { count: this._aliases.length }
+                      )
+                    : this.hass.localize(
+                        "ui.panel.config.areas.editor.no_aliases"
+                      )}
+                </span>
+                <span slot="secondary">
+                  ${[...this._aliases]
+                    .sort((a, b) =>
+                      stringCompare(a, b, this.hass.locale.language)
+                    )
+                    .join(", ")}
+                </span>
+                <ha-svg-icon slot="meta" .path=${mdiPencil}></ha-svg-icon>
+              </mwc-list-item>
+            </mwc-list>
+            <div class="secondary">
+              ${this.hass.localize(
+                "ui.panel.config.areas.editor.aliases_description"
+              )}
+            </div>
+
+            <ha-picture-upload
+              .hass=${this.hass}
+              .value=${this._picture}
+              crop
+              .cropOptions=${cropOptions}
+              @change=${this._pictureChanged}
+            ></ha-picture-upload>
           </div>
         </div>
         ${entry
@@ -83,16 +147,16 @@ class DialogAreaDetail extends LitElement {
               <mwc-button
                 slot="secondaryAction"
                 class="warning"
-                @click="${this._deleteEntry}"
+                @click=${this._deleteEntry}
                 .disabled=${this._submitting}
               >
                 ${this.hass.localize("ui.panel.config.areas.editor.delete")}
               </mwc-button>
             `
-          : html``}
+          : nothing}
         <mwc-button
           slot="primaryAction"
-          @click="${this._updateEntry}"
+          @click=${this._updateEntry}
           .disabled=${nameInvalid || this._submitting}
         >
           ${entry
@@ -103,19 +167,28 @@ class DialogAreaDetail extends LitElement {
     `;
   }
 
+  private _handleAliasesClicked() {
+    showAliasesDialog(this, {
+      name: this._name,
+      aliases: this._aliases,
+      updateAliases: async (aliases: string[]) => {
+        this._aliases = aliases;
+      },
+    });
+  }
+
   private _isNameValid() {
     return this._name.trim() !== "";
   }
 
-  private _handleKeyup(ev: KeyboardEvent) {
-    if (ev.keyCode === 13 && this._isNameValid() && !this._submitting) {
-      this._updateEntry();
-    }
+  private _nameChanged(ev) {
+    this._error = undefined;
+    this._name = ev.target.value;
   }
 
-  private _nameChanged(ev: PolymerChangedEvent<string>) {
+  private _pictureChanged(ev: ValueChangedEvent<string | null>) {
     this._error = undefined;
-    this._name = ev.detail.value;
+    this._picture = (ev.target as HaPictureUpload).value;
   }
 
   private async _updateEntry() {
@@ -123,14 +196,16 @@ class DialogAreaDetail extends LitElement {
     try {
       const values: AreaRegistryEntryMutableParams = {
         name: this._name.trim(),
+        picture: this._picture,
+        aliases: this._aliases,
       };
       if (this._params!.entry) {
         await this._params!.updateEntry!(values);
       } else {
         await this._params!.createEntry!(values);
       }
-      this._params = undefined;
-    } catch (err) {
+      this.closeDialog();
+    } catch (err: any) {
       this._error =
         err.message ||
         this.hass.localize("ui.panel.config.areas.editor.unknown_error");
@@ -143,24 +218,20 @@ class DialogAreaDetail extends LitElement {
     this._submitting = true;
     try {
       if (await this._params!.removeEntry!()) {
-        this._params = undefined;
+        this.closeDialog();
       }
     } finally {
       this._submitting = false;
     }
-
-    navigate("/config/areas/dashboard");
   }
 
   static get styles(): CSSResultGroup {
     return [
       haStyleDialog,
       css`
-        .form {
-          padding-bottom: 24px;
-        }
-        .error {
-          color: var(--error-color);
+        ha-textfield {
+          display: block;
+          margin-bottom: 16px;
         }
       `,
     ];

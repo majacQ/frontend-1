@@ -2,8 +2,12 @@ import { css } from "lit";
 
 export const configFlowContentStyles = css`
   h2 {
-    margin: 24px 0 0;
+    margin: 24px 38px 0 0;
+    margin-inline-start: 0px;
+    margin-inline-end: 38px;
     padding: 0 24px;
+    padding-inline-start: 24px;
+    padding-inline-end: 24px;
     -moz-osx-font-smoothing: grayscale;
     -webkit-font-smoothing: antialiased;
     font-family: var(
@@ -26,8 +30,8 @@ export const configFlowContentStyles = css`
 
   .buttons {
     position: relative;
-    padding: 8px 8px 8px 24px;
-    margin: 0;
+    padding: 8px 16px 8px 24px;
+    margin: 8px 0 0;
     color: var(--primary-color);
     display: flex;
     justify-content: flex-end;

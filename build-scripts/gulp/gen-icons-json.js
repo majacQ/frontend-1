@@ -1,17 +1,15 @@
-const gulp = require("gulp");
-const path = require("path");
-const fs = require("fs");
-const hash = require("object-hash");
+import fs from "fs";
+import gulp from "gulp";
+import hash from "object-hash";
+import path from "path";
+import paths from "../paths.cjs";
 
-const ICON_PACKAGE_PATH = path.resolve(
-  __dirname,
-  "../../node_modules/@mdi/svg/"
-);
+const ICON_PACKAGE_PATH = path.resolve("node_modules/@mdi/svg/");
 const META_PATH = path.resolve(ICON_PACKAGE_PATH, "meta.json");
 const PACKAGE_PATH = path.resolve(ICON_PACKAGE_PATH, "package.json");
 const ICON_PATH = path.resolve(ICON_PACKAGE_PATH, "svg");
-const OUTPUT_DIR = path.resolve(__dirname, "../../build/mdi");
-const REMOVED_ICONS_PATH = path.resolve(__dirname, "../removedIcons.json");
+const OUTPUT_DIR = path.resolve(paths.build_dir, "mdi");
+const REMOVED_ICONS_PATH = new URL("../removedIcons.json", import.meta.url);
 
 const encoding = "utf8";
 
@@ -22,15 +20,38 @@ const getMeta = () => {
     const svg = fs.readFileSync(`${ICON_PATH}/${icon.name}.svg`, {
       encoding,
     });
-    return { path: svg.match(/ d="([^"]+)"/)[1], name: icon.name };
+    return {
+      path: svg.match(/ d="([^"]+)"/)[1],
+      name: icon.name,
+      tags: icon.tags,
+      aliases: icon.aliases,
+    };
   });
 };
 
 const addRemovedMeta = (meta) => {
   const file = fs.readFileSync(REMOVED_ICONS_PATH, { encoding });
   const removed = JSON.parse(file);
-  const combinedMeta = [...meta, ...removed];
+  const removedMeta = removed.map((removeIcon) => ({
+    path: removeIcon.path,
+    name: removeIcon.name,
+    tags: [],
+    aliases: [],
+  }));
+  const combinedMeta = [...meta, ...removedMeta];
   return combinedMeta.sort((a, b) => a.name.localeCompare(b.name));
+};
+
+const homeAutomationTag = "Home Automation";
+
+const orderMeta = (meta) => {
+  const homeAutomationMeta = meta.filter((icon) =>
+    icon.tags.includes(homeAutomationTag)
+  );
+  const otherMeta = meta.filter(
+    (icon) => !icon.tags.includes(homeAutomationTag)
+  );
+  return [...homeAutomationMeta, ...otherMeta];
 };
 
 const splitBySize = (meta) => {
@@ -77,8 +98,10 @@ const findDifferentiator = (curString, prevString) => {
 };
 
 gulp.task("gen-icons-json", (done) => {
-  const meta = addRemovedMeta(getMeta());
-  const split = splitBySize(meta);
+  const meta = getMeta();
+
+  const metaAndRemoved = addRemovedMeta(meta);
+  const split = splitBySize(metaAndRemoved);
 
   if (!fs.existsSync(OUTPUT_DIR)) {
     fs.mkdirSync(OUTPUT_DIR, { recursive: true });
@@ -109,12 +132,34 @@ gulp.task("gen-icons-json", (done) => {
   });
 
   const file = fs.readFileSync(PACKAGE_PATH, { encoding });
-  const package = JSON.parse(file);
+  const packageMeta = JSON.parse(file);
 
   fs.writeFileSync(
     path.resolve(OUTPUT_DIR, "iconMetadata.json"),
-    JSON.stringify({ version: package.version, parts })
+    JSON.stringify({ version: packageMeta.version, parts })
   );
 
+  fs.writeFileSync(
+    path.resolve(OUTPUT_DIR, "iconList.json"),
+    JSON.stringify(
+      orderMeta(meta).map((icon) => ({
+        name: icon.name,
+        keywords: [
+          ...icon.tags.map((t) => t.toLowerCase().replace(/\s\/\s/g, " ")),
+          ...icon.aliases,
+        ],
+      }))
+    )
+  );
+
+  done();
+});
+
+gulp.task("gen-dummy-icons-json", (done) => {
+  if (!fs.existsSync(OUTPUT_DIR)) {
+    fs.mkdirSync(OUTPUT_DIR, { recursive: true });
+  }
+
+  fs.writeFileSync(path.resolve(OUTPUT_DIR, "iconList.json"), "[]");
   done();
 });

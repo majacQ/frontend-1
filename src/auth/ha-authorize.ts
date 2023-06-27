@@ -1,5 +1,5 @@
 import { css, CSSResultGroup, html, LitElement, PropertyValues } from "lit";
-import { property, state } from "lit/decorators";
+import { customElement, property, state } from "lit/decorators";
 import punycode from "punycode";
 import { applyThemesOnElement } from "../common/dom/apply_themes_on_element";
 import { extractSearchParamsObject } from "../common/url/search-params";
@@ -8,17 +8,14 @@ import {
   AuthUrlSearchParams,
   fetchAuthProviders,
 } from "../data/auth";
-import {
-  DiscoveryInformation,
-  fetchDiscoveryInformation,
-} from "../data/discovery";
 import { litLocalizeLiteMixin } from "../mixins/lit-localize-lite-mixin";
 import { registerServiceWorker } from "../util/register-service-worker";
 import "./ha-auth-flow";
 
 import("./ha-pick-auth-provider");
 
-class HaAuthorize extends litLocalizeLiteMixin(LitElement) {
+@customElement("ha-authorize")
+export class HaAuthorize extends litLocalizeLiteMixin(LitElement) {
   @property() public clientId?: string;
 
   @property() public redirectUri?: string;
@@ -28,8 +25,6 @@ class HaAuthorize extends litLocalizeLiteMixin(LitElement) {
   @state() private _authProvider?: AuthProvider;
 
   @state() private _authProviders?: AuthProvider[];
-
-  @state() private _discovery?: DiscoveryInformation;
 
   constructor() {
     super();
@@ -58,17 +53,14 @@ class HaAuthorize extends litLocalizeLiteMixin(LitElement) {
     // the name with a bold tag.
     const loggingInWith = document.createElement("div");
     loggingInWith.innerText = this.localize(
-      this._discovery?.location_name
-        ? "ui.panel.page-authorize.logging_in_to_with"
-        : "ui.panel.page-authorize.logging_in_with",
-      "locationName",
-      "LOCATION",
+      "ui.panel.page-authorize.logging_in_with",
       "authProviderName",
       "NAME"
     );
-    loggingInWith.innerHTML = loggingInWith.innerHTML
-      .replace("**LOCATION**", `<b>${this._discovery?.location_name}</b>`)
-      .replace("**NAME**", `<b>${this._authProvider!.name}</b>`);
+    loggingInWith.innerHTML = loggingInWith.innerHTML.replace(
+      "**NAME**",
+      `<b>${this._authProvider!.name}</b>`
+    );
 
     const inactiveProviders = this._authProviders.filter(
       (prv) => prv !== this._authProvider
@@ -85,20 +77,21 @@ class HaAuthorize extends litLocalizeLiteMixin(LitElement) {
       ${loggingInWith}
 
       <ha-auth-flow
-        .resources="${this.resources}"
-        .clientId="${this.clientId}"
-        .redirectUri="${this.redirectUri}"
-        .oauth2State="${this.oauth2State}"
-        .authProvider="${this._authProvider}"
+        .resources=${this.resources}
+        .clientId=${this.clientId}
+        .redirectUri=${this.redirectUri}
+        .oauth2State=${this.oauth2State}
+        .authProvider=${this._authProvider}
+        .localize=${this.localize}
       ></ha-auth-flow>
 
       ${inactiveProviders.length > 0
         ? html`
             <ha-pick-auth-provider
-              .resources="${this.resources}"
-              .clientId="${this.clientId}"
-              .authProviders="${inactiveProviders}"
-              @pick-auth-provider="${this._handleAuthProviderPick}"
+              .localize=${this.localize}
+              .clientId=${this.clientId}
+              .authProviders=${inactiveProviders}
+              @pick-auth-provider=${this._handleAuthProviderPick}
             ></ha-pick-auth-provider>
           `
         : ""}
@@ -108,7 +101,6 @@ class HaAuthorize extends litLocalizeLiteMixin(LitElement) {
   protected firstUpdated(changedProps: PropertyValues) {
     super.firstUpdated(changedProps);
     this._fetchAuthProviders();
-    this._fetchDiscoveryInfo();
 
     if (matchMedia("(prefers-color-scheme: dark)").matches) {
       applyThemesOnElement(
@@ -117,10 +109,12 @@ class HaAuthorize extends litLocalizeLiteMixin(LitElement) {
           default_theme: "default",
           default_dark_theme: null,
           themes: {},
-          darkMode: false,
+          darkMode: true,
+          theme: "default",
         },
-        "default",
-        { dark: true }
+        undefined,
+        undefined,
+        true
       );
     }
 
@@ -142,10 +136,6 @@ class HaAuthorize extends litLocalizeLiteMixin(LitElement) {
     if (changedProps.has("language")) {
       document.querySelector("html")!.setAttribute("lang", this.language!);
     }
-  }
-
-  private async _fetchDiscoveryInfo() {
-    this._discovery = await fetchDiscoveryInformation();
   }
 
   private async _fetchAuthProviders() {
@@ -172,7 +162,7 @@ class HaAuthorize extends litLocalizeLiteMixin(LitElement) {
 
       this._authProviders = authProviders;
       this._authProvider = authProviders[0];
-    } catch (err) {
+    } catch (err: any) {
       // eslint-disable-next-line
       console.error("Error loading auth providers", err);
     }
@@ -188,7 +178,10 @@ class HaAuthorize extends litLocalizeLiteMixin(LitElement) {
         display: block;
         margin-top: 48px;
       }
+      ha-auth-flow {
+        display: block;
+        margin-top: 24px;
+      }
     `;
   }
 }
-customElements.define("ha-authorize", HaAuthorize);

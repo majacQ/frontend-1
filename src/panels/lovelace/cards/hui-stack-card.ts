@@ -4,7 +4,7 @@ import {
   html,
   LitElement,
   PropertyValues,
-  TemplateResult,
+  nothing,
 } from "lit";
 import { property, state } from "lit/decorators";
 import { LovelaceCardConfig } from "../../../data/lovelace";
@@ -15,7 +15,8 @@ import { StackCardConfig } from "./types";
 
 export abstract class HuiStackCard<T extends StackCardConfig = StackCardConfig>
   extends LitElement
-  implements LovelaceCard {
+  implements LovelaceCard
+{
   public static async getConfigElement(): Promise<LovelaceCardEditor> {
     await import("../editor/config-elements/hui-stack-card-editor");
     return document.createElement("hui-stack-card-editor");
@@ -67,9 +68,9 @@ export abstract class HuiStackCard<T extends StackCardConfig = StackCardConfig>
     }
   }
 
-  protected render(): TemplateResult {
+  protected render() {
     if (!this._config || !this._cards) {
-      return html``;
+      return nothing;
     }
 
     return html`

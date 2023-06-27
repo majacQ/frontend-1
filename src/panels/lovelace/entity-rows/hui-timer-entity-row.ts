@@ -1,5 +1,5 @@
 import { HassEntity } from "home-assistant-js-websocket";
-import { html, LitElement, PropertyValues, TemplateResult } from "lit";
+import { html, LitElement, PropertyValues, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators";
 import { computeDisplayTimer, timerTimeRemaining } from "../../../data/timer";
 import { HomeAssistant } from "../../../types";
@@ -23,6 +23,18 @@ class HuiTimerEntityRow extends LitElement {
       throw new Error("Invalid configuration");
     }
     this._config = config;
+
+    if (!this.hass) {
+      return;
+    }
+
+    const stateObj = this.hass!.states[this._config.entity];
+
+    if (stateObj) {
+      this._startInterval(stateObj);
+    } else {
+      this._clearInterval();
+    }
   }
 
   public disconnectedCallback(): void {
@@ -40,9 +52,9 @@ class HuiTimerEntityRow extends LitElement {
     }
   }
 
-  protected render(): TemplateResult {
+  protected render() {
     if (!this._config || !this.hass) {
-      return html``;
+      return nothing;
     }
 
     const stateObj = this.hass.states[this._config.entity];
@@ -75,18 +87,19 @@ class HuiTimerEntityRow extends LitElement {
   protected updated(changedProps: PropertyValues) {
     super.updated(changedProps);
 
-    if (changedProps.has("hass")) {
-      const stateObj = this.hass!.states[this._config!.entity];
-      const oldHass = changedProps.get("hass") as this["hass"];
-      const oldStateObj = oldHass
-        ? oldHass.states[this._config!.entity]
-        : undefined;
+    if (!this._config || !changedProps.has("hass")) {
+      return;
+    }
+    const stateObj = this.hass!.states[this._config!.entity];
+    const oldHass = changedProps.get("hass") as this["hass"];
+    const oldStateObj = oldHass
+      ? oldHass.states[this._config!.entity]
+      : undefined;
 
-      if (oldStateObj !== stateObj) {
-        this._startInterval(stateObj);
-      } else if (!stateObj) {
-        this._clearInterval();
-      }
+    if (oldStateObj !== stateObj) {
+      this._startInterval(stateObj);
+    } else if (!stateObj) {
+      this._clearInterval();
     }
   }
 

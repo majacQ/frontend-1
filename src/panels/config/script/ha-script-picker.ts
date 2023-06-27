@@ -1,32 +1,56 @@
-import "@material/mwc-icon-button";
 import {
+  mdiContentDuplicate,
+  mdiDelete,
   mdiHelpCircle,
   mdiInformationOutline,
-  mdiPencil,
   mdiPlay,
   mdiPlus,
+  mdiTransitConnection,
 } from "@mdi/js";
 import { HassEntity } from "home-assistant-js-websocket";
 import { css, CSSResultGroup, html, LitElement, TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators";
 import memoizeOne from "memoize-one";
-import { formatDateTime } from "../../../common/datetime/format_date_time";
-import { fireEvent } from "../../../common/dom/fire_event";
+import { differenceInDays } from "date-fns/esm";
+import { styleMap } from "lit/directives/style-map";
+import { isComponentLoaded } from "../../../common/config/is_component_loaded";
+import { formatShortDateTime } from "../../../common/datetime/format_date_time";
+import { relativeTime } from "../../../common/datetime/relative_time";
+import { fireEvent, HASSDomEvent } from "../../../common/dom/fire_event";
 import { computeStateName } from "../../../common/entity/compute_state_name";
-import { stateIcon } from "../../../common/entity/state_icon";
+import { navigate } from "../../../common/navigate";
 import { computeRTL } from "../../../common/util/compute_rtl";
-import { DataTableColumnContainer } from "../../../components/data-table/ha-data-table";
+import {
+  DataTableColumnContainer,
+  RowClickedEvent,
+} from "../../../components/data-table/ha-data-table";
 import "../../../components/ha-button-related-filter-menu";
 import "../../../components/ha-fab";
+import "../../../components/ha-icon-button";
+import "../../../components/ha-icon-overflow-menu";
 import "../../../components/ha-svg-icon";
-import { triggerScript } from "../../../data/script";
-import { showAlertDialog } from "../../../dialogs/generic/show-dialog-box";
+import {
+  deleteScript,
+  fetchScriptFileConfig,
+  getScriptStateConfig,
+  showScriptEditor,
+  triggerScript,
+} from "../../../data/script";
+import {
+  showAlertDialog,
+  showConfirmationDialog,
+} from "../../../dialogs/generic/show-dialog-box";
 import "../../../layouts/hass-tabs-subpage-data-table";
 import { haStyle } from "../../../resources/styles";
 import { HomeAssistant, Route } from "../../../types";
 import { documentationUrl } from "../../../util/documentation-url";
 import { showToast } from "../../../util/toast";
 import { configSections } from "../ha-panel-config";
+import { showNewAutomationDialog } from "../automation/show-dialog-new-automation";
+import { EntityRegistryEntry } from "../../../data/entity_registry";
+import { findRelated } from "../../../data/search";
+import { fetchBlueprints } from "../../../data/blueprint";
+import { UNAVAILABLE } from "../../../data/entity";
 
 @customElement("ha-script-picker")
 class HaScriptPicker extends LitElement {
@@ -40,7 +64,11 @@ class HaScriptPicker extends LitElement {
 
   @property() public route!: Route;
 
-  @property() private _activeFilters?: string[];
+  @property({ attribute: false }) public entityRegistry!: EntityRegistryEntry[];
+
+  @state() private _searchParms = new URLSearchParams(window.location.search);
+
+  @state() private _activeFilters?: string[];
 
   @state() private _filteredScripts?: string[] | null;
 
@@ -51,113 +79,143 @@ class HaScriptPicker extends LitElement {
       if (filteredScripts === null) {
         return [];
       }
-      return (filteredScripts
-        ? scripts.filter((script) =>
-            filteredScripts!.includes(script.entity_id)
-          )
-        : scripts
+      return (
+        filteredScripts
+          ? scripts.filter((script) =>
+              filteredScripts!.includes(script.entity_id)
+            )
+          : scripts
       ).map((script) => ({
         ...script,
         name: computeStateName(script),
-        icon: stateIcon(script),
         last_triggered: script.attributes.last_triggered || undefined,
       }));
     }
   );
 
-  private _columns = memoizeOne(
-    (narrow, _locale): DataTableColumnContainer => {
-      const columns: DataTableColumnContainer = {
-        activate: {
-          title: "",
-          type: "icon-button",
-          template: (_toggle, script) =>
-            html`
-              <mwc-icon-button
-                .script=${script}
-                title="${this.hass.localize(
-                  "ui.panel.config.script.picker.run_script"
-                )}"
-                @click=${(ev: Event) => this._runScript(ev)}
-              >
-                <ha-svg-icon .path=${mdiPlay}></ha-svg-icon>
-              </mwc-icon-button>
-            `,
-        },
-        icon: {
-          title: "",
-          type: "icon",
-          template: (icon) => html` <ha-icon .icon=${icon}></ha-icon> `,
-        },
-        name: {
-          title: this.hass.localize(
-            "ui.panel.config.script.picker.headers.name"
-          ),
-          sortable: true,
-          filterable: true,
-          direction: "asc",
-          grows: true,
-          template: narrow
-            ? (name, script: any) => html`
+  private _columns = memoizeOne((narrow, _locale): DataTableColumnContainer => {
+    const columns: DataTableColumnContainer = {
+      icon: {
+        title: "",
+        label: this.hass.localize(
+          "ui.panel.config.script.picker.headers.state"
+        ),
+        type: "icon",
+        template: (_icon, script) =>
+          html`<ha-state-icon
+            .state=${script}
+            style=${styleMap({
+              color:
+                script.state === UNAVAILABLE ? "var(--error-color)" : "unset",
+            })}
+          ></ha-state-icon>`,
+      },
+      name: {
+        title: this.hass.localize("ui.panel.config.script.picker.headers.name"),
+        main: true,
+        sortable: true,
+        filterable: true,
+        direction: "asc",
+        grows: true,
+        template: narrow
+          ? (name, script: any) => {
+              const date = new Date(script.attributes.last_triggered);
+              const now = new Date();
+              const dayDifference = differenceInDays(now, date);
+              return html`
                 ${name}
                 <div class="secondary">
                   ${this.hass.localize("ui.card.automation.last_triggered")}:
                   ${script.attributes.last_triggered
-                    ? formatDateTime(
-                        new Date(script.attributes.last_triggered),
-                        this.hass.locale
-                      )
+                    ? dayDifference > 3
+                      ? formatShortDateTime(
+                          date,
+                          this.hass.locale,
+                          this.hass.config
+                        )
+                      : relativeTime(date, this.hass.locale)
                     : this.hass.localize("ui.components.relative_time.never")}
                 </div>
-              `
-            : undefined,
+              `;
+            }
+          : undefined,
+      },
+    };
+    if (!narrow) {
+      columns.last_triggered = {
+        sortable: true,
+        width: "40%",
+        title: this.hass.localize("ui.card.automation.last_triggered"),
+        template: (last_triggered) => {
+          const date = new Date(last_triggered);
+          const now = new Date();
+          const dayDifference = differenceInDays(now, date);
+          return html`
+            ${last_triggered
+              ? dayDifference > 3
+                ? formatShortDateTime(date, this.hass.locale, this.hass.config)
+                : relativeTime(date, this.hass.locale)
+              : this.hass.localize("ui.components.relative_time.never")}
+          `;
         },
       };
-      if (!narrow) {
-        columns.last_triggered = {
-          sortable: true,
-          width: "20%",
-          title: this.hass.localize("ui.card.automation.last_triggered"),
-          template: (last_triggered) => html`
-            ${last_triggered
-              ? formatDateTime(new Date(last_triggered), this.hass.locale)
-              : this.hass.localize("ui.components.relative_time.never")}
-          `,
-        };
-      }
-      columns.info = {
-        title: "",
-        type: "icon-button",
-        template: (_info, script) => html`
-          <mwc-icon-button
-            .script=${script}
-            @click=${this._showInfo}
-            title="${this.hass.localize(
-              "ui.panel.config.script.picker.show_info"
-            )}"
-          >
-            <ha-svg-icon .path=${mdiInformationOutline}></ha-svg-icon>
-          </mwc-icon-button>
-        `,
-      };
-      columns.edit = {
-        title: "",
-        type: "icon-button",
-        template: (_info, script: any) => html`
-          <a href="/config/script/edit/${script.entity_id}">
-            <mwc-icon-button
-              title="${this.hass.localize(
-                "ui.panel.config.script.picker.edit_script"
-              )}"
-            >
-              <ha-svg-icon .path=${mdiPencil}></ha-svg-icon>
-            </mwc-icon-button>
-          </a>
-        `,
-      };
-      return columns;
     }
-  );
+
+    columns.actions = {
+      title: "",
+      width: this.narrow ? undefined : "10%",
+      type: "overflow-menu",
+      template: (_: string, script: any) =>
+        html`
+          <ha-icon-overflow-menu
+            .hass=${this.hass}
+            narrow
+            .items=${[
+              {
+                path: mdiInformationOutline,
+                label: this.hass.localize(
+                  "ui.panel.config.script.picker.show_info"
+                ),
+                action: () => this._showInfo(script),
+              },
+              {
+                path: mdiPlay,
+                label: this.hass.localize("ui.panel.config.script.picker.run"),
+                action: () => this._runScript(script),
+              },
+              {
+                path: mdiTransitConnection,
+                label: this.hass.localize(
+                  "ui.panel.config.script.picker.show_trace"
+                ),
+                action: () => this._showTrace(script),
+              },
+              {
+                divider: true,
+              },
+              {
+                path: mdiContentDuplicate,
+                label: this.hass.localize(
+                  "ui.panel.config.script.picker.duplicate"
+                ),
+                action: () => this._duplicate(script),
+              },
+              {
+                label: this.hass.localize(
+                  "ui.panel.config.script.picker.delete"
+                ),
+                path: mdiDelete,
+                action: () => this._deleteConfirm(script),
+                warning: true,
+              },
+            ]}
+          >
+          </ha-icon-overflow-menu>
+        `,
+    };
+
+    return columns;
+  });
 
   protected render(): TemplateResult {
     return html`
@@ -166,7 +224,7 @@ class HaScriptPicker extends LitElement {
         .narrow=${this.narrow}
         back-path="/config"
         .route=${this.route}
-        .tabs=${configSections.automation}
+        .tabs=${configSections.automations}
         .columns=${this._columns(this.narrow, this.hass.locale)}
         .data=${this._scripts(this.scripts, this._filteredScripts)}
         .activeFilters=${this._activeFilters}
@@ -176,13 +234,17 @@ class HaScriptPicker extends LitElement {
         )}
         @clear-filter=${this._clearFilter}
         hasFab
+        clickable
+        @row-click=${this._handleRowClicked}
       >
-        <mwc-icon-button slot="toolbar-icon" @click=${this._showHelp}>
-          <ha-svg-icon .path=${mdiHelpCircle}></ha-svg-icon>
-        </mwc-icon-button>
+        <ha-icon-button
+          slot="toolbar-icon"
+          .label=${this.hass.localize("ui.common.help")}
+          .path=${mdiHelpCircle}
+          @click=${this._showHelp}
+        ></ha-icon-button>
         <ha-button-related-filter-menu
           slot="filter-menu"
-          corner="BOTTOM_START"
           .narrow=${this.narrow}
           .hass=${this.hass}
           .value=${this._filterValue}
@@ -190,21 +252,49 @@ class HaScriptPicker extends LitElement {
           @related-changed=${this._relatedFilterChanged}
         >
         </ha-button-related-filter-menu>
-        <a href="/config/script/edit/new" slot="fab">
-          <ha-fab
-            ?is-wide=${this.isWide}
-            ?narrow=${this.narrow}
-            .label=${this.hass.localize(
-              "ui.panel.config.script.picker.add_script"
-            )}
-            extended
-            ?rtl=${computeRTL(this.hass)}
-          >
-            <ha-svg-icon slot="icon" .path=${mdiPlus}></ha-svg-icon>
-          </ha-fab>
-        </a>
+        <ha-fab
+          slot="fab"
+          ?is-wide=${this.isWide}
+          ?narrow=${this.narrow}
+          .label=${this.hass.localize(
+            "ui.panel.config.script.picker.add_script"
+          )}
+          extended
+          ?rtl=${computeRTL(this.hass)}
+          @click=${this._createNew}
+        >
+          <ha-svg-icon slot="icon" .path=${mdiPlus}></ha-svg-icon>
+        </ha-fab>
       </hass-tabs-subpage-data-table>
     `;
+  }
+
+  firstUpdated() {
+    if (this._searchParms.has("blueprint")) {
+      this._filterBlueprint();
+    }
+  }
+
+  private async _filterBlueprint() {
+    const blueprint = this._searchParms.get("blueprint");
+    if (!blueprint) {
+      return;
+    }
+    const [related, blueprints] = await Promise.all([
+      findRelated(this.hass, "script_blueprint", blueprint),
+      fetchBlueprints(this.hass, "script"),
+    ]);
+    this._filteredScripts = related.script || [];
+    const blueprintMeta = blueprints[blueprint];
+    this._activeFilters = [
+      this.hass.localize(
+        "ui.panel.config.script.picker.filtered_by_blueprint",
+        "name",
+        !blueprintMeta || "error" in blueprintMeta
+          ? blueprint
+          : blueprintMeta.metadata.name || blueprint
+      ),
+    ];
   }
 
   private _relatedFilterChanged(ev: CustomEvent) {
@@ -223,10 +313,31 @@ class HaScriptPicker extends LitElement {
     this._filterValue = undefined;
   }
 
-  private async _runScript(ev) {
-    ev.stopPropagation();
-    const script = ev.currentTarget.script as HassEntity;
-    await triggerScript(this.hass, script.entity_id);
+  private _handleRowClicked(ev: HASSDomEvent<RowClickedEvent>) {
+    const entry = this.entityRegistry.find((e) => e.entity_id === ev.detail.id);
+    if (entry) {
+      navigate(`/config/script/edit/${entry.unique_id}`);
+    } else {
+      navigate(`/config/script/show/${ev.detail.id}`);
+    }
+  }
+
+  private _createNew() {
+    if (isComponentLoaded(this.hass, "blueprint")) {
+      showNewAutomationDialog(this, { mode: "script" });
+    } else {
+      navigate("/config/script/edit/new");
+    }
+  }
+
+  private _runScript = async (script: any) => {
+    const entry = this.entityRegistry.find(
+      (e) => e.entity_id === script.entity_id
+    );
+    if (!entry) {
+      return;
+    }
+    await triggerScript(this.hass, entry.unique_id);
     showToast(this, {
       message: this.hass.localize(
         "ui.notification_toast.triggered",
@@ -234,12 +345,19 @@ class HaScriptPicker extends LitElement {
         computeStateName(script)
       ),
     });
+  };
+
+  private _showInfo(script: any) {
+    fireEvent(this, "hass-more-info", { entityId: script.entity_id });
   }
 
-  private _showInfo(ev) {
-    ev.stopPropagation();
-    const entityId = ev.currentTarget.script.entity_id;
-    fireEvent(this, "hass-more-info", { entityId });
+  private _showTrace(script: any) {
+    const entry = this.entityRegistry.find(
+      (e) => e.entity_id === script.entity_id
+    );
+    if (entry) {
+      navigate(`/config/script/trace/${entry.unique_id}`);
+    }
   }
 
   private _showHelp() {
@@ -249,7 +367,7 @@ class HaScriptPicker extends LitElement {
         ${this.hass.localize("ui.panel.config.script.picker.introduction")}
         <p>
           <a
-            href="${documentationUrl(this.hass, "/docs/scripts/editor/")}"
+            href=${documentationUrl(this.hass, "/docs/scripts/")}
             target="_blank"
             rel="noreferrer"
           >
@@ -258,6 +376,80 @@ class HaScriptPicker extends LitElement {
         </p>
       `,
     });
+  }
+
+  private async _duplicate(script: any) {
+    try {
+      const entry = this.entityRegistry.find(
+        (e) => e.entity_id === script.entity_id
+      );
+      if (!entry) {
+        return;
+      }
+      const config = await fetchScriptFileConfig(this.hass, entry.unique_id);
+      showScriptEditor({
+        ...config,
+        alias: `${config?.alias} (${this.hass.localize(
+          "ui.panel.config.script.picker.duplicate"
+        )})`,
+      });
+    } catch (err: any) {
+      if (err.status_code === 404) {
+        const response = await getScriptStateConfig(
+          this.hass,
+          script.entity_id
+        );
+        showScriptEditor(response.config);
+        return;
+      }
+      await showAlertDialog(this, {
+        text: this.hass.localize(
+          "ui.panel.config.script.editor.load_error_unknown",
+          "err_no",
+          err.status_code
+        ),
+      });
+    }
+  }
+
+  private async _deleteConfirm(script: any) {
+    showConfirmationDialog(this, {
+      title: this.hass.localize(
+        "ui.panel.config.script.editor.delete_confirm_title"
+      ),
+      text: this.hass.localize(
+        "ui.panel.config.script.editor.delete_confirm_text",
+        { name: script.name }
+      ),
+      confirmText: this.hass!.localize("ui.common.delete"),
+      dismissText: this.hass!.localize("ui.common.cancel"),
+      confirm: () => this._delete(script),
+      destructive: true,
+    });
+  }
+
+  private async _delete(script: any) {
+    try {
+      const entry = this.entityRegistry.find(
+        (e) => e.entity_id === script.entity_id
+      );
+      if (entry) {
+        await deleteScript(this.hass, entry.unique_id);
+      }
+    } catch (err: any) {
+      await showAlertDialog(this, {
+        text:
+          err.status_code === 400
+            ? this.hass.localize(
+                "ui.panel.config.script.editor.load_error_not_deletable"
+              )
+            : this.hass.localize(
+                "ui.panel.config.script.editor.load_error_unknown",
+                "err_no",
+                err.status_code
+              ),
+      });
+    }
   }
 
   static get styles(): CSSResultGroup {

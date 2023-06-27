@@ -5,6 +5,7 @@ import {
   LitElement,
   PropertyValues,
   TemplateResult,
+  nothing,
 } from "lit";
 import { customElement, state } from "lit/decorators";
 import { DOMAINS_TOGGLE } from "../../../common/const";
@@ -134,7 +135,10 @@ class HuiEntitiesCard extends LitElement implements LovelaceCard {
     }
 
     if (this._config.header) {
-      this._headerElement = createHeaderFooterElement(this._config.header);
+      this._headerElement = createHeaderFooterElement(
+        this._config.header
+      ) as LovelaceHeaderFooter;
+      this._headerElement.type = "header";
       if (this._hass) {
         this._headerElement.hass = this._hass;
       }
@@ -143,7 +147,10 @@ class HuiEntitiesCard extends LitElement implements LovelaceCard {
     }
 
     if (this._config.footer) {
-      this._footerElement = createHeaderFooterElement(this._config.footer);
+      this._footerElement = createHeaderFooterElement(
+        this._config.footer
+      ) as LovelaceHeaderFooter;
+      this._footerElement.type = "footer";
       if (this._hass) {
         this._footerElement.hass = this._hass;
       }
@@ -157,24 +164,24 @@ class HuiEntitiesCard extends LitElement implements LovelaceCard {
     if (!this._config || !this._hass) {
       return;
     }
-    const oldHass = changedProps.get("hass") as HomeAssistant | undefined;
+    const oldHass = changedProps.get("_hass") as HomeAssistant | undefined;
     const oldConfig = changedProps.get("_config") as
       | EntitiesCardConfig
       | undefined;
 
     if (
-      !oldHass ||
-      !oldConfig ||
-      oldHass.themes !== this.hass.themes ||
-      oldConfig.theme !== this._config.theme
+      (changedProps.has("_hass") &&
+        (!oldHass || oldHass.themes !== this._hass.themes)) ||
+      (changedProps.has("_config") &&
+        (!oldConfig || oldConfig.theme !== this._config.theme))
     ) {
       applyThemesOnElement(this, this._hass.themes, this._config.theme);
     }
   }
 
-  protected render(): TemplateResult {
+  protected render() {
     if (!this._config || !this._hass) {
-      return html``;
+      return nothing;
     }
 
     return html`
@@ -198,13 +205,15 @@ class HuiEntitiesCard extends LitElement implements LovelaceCard {
                   ${this._config.title}
                 </div>
                 ${!this._showHeaderToggle
-                  ? html``
+                  ? nothing
                   : html`
                       <hui-entities-toggle
                         .hass=${this._hass}
-                        .entities=${(this._configEntities!.filter(
-                          (conf) => "entity" in conf
-                        ) as EntityConfig[]).map((conf) => conf.entity)}
+                        .entities=${(
+                          this._configEntities!.filter(
+                            (conf) => "entity" in conf
+                          ) as EntityConfig[]
+                        ).map((conf) => conf.entity)}
                       ></hui-entities-toggle>
                     `}
               </h1>
@@ -229,7 +238,6 @@ class HuiEntitiesCard extends LitElement implements LovelaceCard {
         display: flex;
         flex-direction: column;
         justify-content: space-between;
-        overflow: hidden;
       }
       .card-header {
         display: flex;
@@ -259,7 +267,7 @@ class HuiEntitiesCard extends LitElement implements LovelaceCard {
       }
 
       #states > div > * {
-        overflow: hidden;
+        overflow: clip visible;
       }
 
       #states > div {
@@ -271,15 +279,15 @@ class HuiEntitiesCard extends LitElement implements LovelaceCard {
       }
 
       .header {
-        border-top-left-radius: var(--ha-card-border-radius, 2px);
-        border-top-right-radius: var(--ha-card-border-radius, 2px);
+        border-top-left-radius: var(--ha-card-border-radius, 12px);
+        border-top-right-radius: var(--ha-card-border-radius, 12px);
         margin-bottom: 16px;
         overflow: hidden;
       }
 
       .footer {
-        border-bottom-left-radius: var(--ha-card-border-radius, 2px);
-        border-bottom-right-radius: var(--ha-card-border-radius, 2px);
+        border-bottom-left-radius: var(--ha-card-border-radius, 12px);
+        border-bottom-right-radius: var(--ha-card-border-radius, 12px);
         margin-top: -16px;
         overflow: hidden;
       }
@@ -288,7 +296,8 @@ class HuiEntitiesCard extends LitElement implements LovelaceCard {
 
   private renderEntity(entityConf: LovelaceRowConfig): TemplateResult {
     const element = createRowElement(
-      !("type" in entityConf) && this._config!.state_color
+      (!("type" in entityConf) || entityConf.type === "conditional") &&
+        this._config!.state_color
         ? ({
             state_color: true,
             ...(entityConf as EntityConfig),

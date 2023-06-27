@@ -15,7 +15,7 @@ class SupervisorFormfieldLabel extends LitElement {
   protected render(): TemplateResult {
     return html`
       ${this.imageUrl
-        ? html`<img loading="lazy" .src=${this.imageUrl} class="icon" />`
+        ? html`<img loading="lazy" alt="" src=${this.imageUrl} class="icon" />`
         : this.iconPath
         ? html`<ha-svg-icon .path=${this.iconPath} class="icon"></ha-svg-icon>`
         : ""}
@@ -29,7 +29,6 @@ class SupervisorFormfieldLabel extends LitElement {
   static get styles(): CSSResultGroup {
     return css`
       :host {
-        cursor: pointer;
         display: flex;
         align-items: center;
       }

@@ -22,6 +22,7 @@ export interface MQTTEntityDebugInfo {
   entity_id: string;
   discovery_data: MQTTDiscoveryDebugInfo;
   subscriptions: MQTTTopicDebugInfo[];
+  transmitted: MQTTTopicDebugInfo[];
 }
 
 export interface MQTTTriggerDebugInfo {
@@ -36,20 +37,13 @@ export interface MQTTDeviceDebugInfo {
 export const subscribeMQTTTopic = (
   hass: HomeAssistant,
   topic: string,
-  callback: (message: MQTTMessage) => void
+  callback: (message: MQTTMessage) => void,
+  qos?: number
 ) =>
   hass.connection.subscribeMessage<MQTTMessage>(callback, {
     type: "mqtt/subscribe",
     topic,
-  });
-
-export const removeMQTTDeviceEntry = (
-  hass: HomeAssistant,
-  deviceId: string
-): Promise<void> =>
-  hass.callWS({
-    type: "mqtt/device/remove",
-    device_id: deviceId,
+    qos,
   });
 
 export const fetchMQTTDebugInfo = (

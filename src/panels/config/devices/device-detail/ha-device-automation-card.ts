@@ -1,14 +1,25 @@
-import { css, CSSResultGroup, html, LitElement, TemplateResult } from "lit";
-import { property } from "lit/decorators";
-import "../../../../components/ha-card";
+import { consume } from "@lit-labs/context";
+import { css, html, LitElement, nothing } from "lit";
+import { property, state } from "lit/decorators";
+import { fireEvent } from "../../../../common/dom/fire_event";
+import "../../../../components/ha-chip";
 import "../../../../components/ha-chip-set";
 import { showAutomationEditor } from "../../../../data/automation";
+import { fullEntitiesContext } from "../../../../data/context";
 import {
   DeviceAction,
   DeviceAutomation,
 } from "../../../../data/device_automation";
+import { EntityRegistryEntry } from "../../../../data/entity_registry";
 import { showScriptEditor } from "../../../../data/script";
+import { buttonLinkStyle } from "../../../../resources/styles";
 import { HomeAssistant } from "../../../../types";
+
+declare global {
+  interface HASSDomEvents {
+    "entry-selected": undefined;
+  }
+}
 
 export abstract class HaDeviceAutomationCard<
   T extends DeviceAutomation
@@ -17,16 +28,23 @@ export abstract class HaDeviceAutomationCard<
 
   @property() public deviceId?: string;
 
-  @property() public script = false;
+  @property({ type: Boolean }) public script = false;
 
-  @property() public automations: T[] = [];
+  @property({ attribute: false }) public automations: T[] = [];
 
-  protected headerKey = "";
+  @state() public _showSecondary = false;
 
-  protected type = "";
+  @state()
+  @consume({ context: fullEntitiesContext, subscribe: true })
+  _entityReg!: EntityRegistryEntry[];
+
+  abstract headerKey: Parameters<typeof this.hass.localize>[0];
+
+  abstract type: "action" | "condition" | "trigger";
 
   private _localizeDeviceAutomation: (
     hass: HomeAssistant,
+    entityRegistry: EntityRegistryEntry[],
     automation: T
   ) => string;
 
@@ -48,43 +66,78 @@ export abstract class HaDeviceAutomationCard<
     return false;
   }
 
-  protected render(): TemplateResult {
+  protected render() {
     if (this.automations.length === 0) {
-      return html``;
+      return nothing;
     }
+    const automations = this._showSecondary
+      ? this.automations
+      : this.automations.filter(
+          (automation) => automation.metadata?.secondary === false
+        );
     return html`
       <h3>${this.hass.localize(this.headerKey)}</h3>
       <div class="content">
-        <ha-chip-set
-          @chip-clicked=${this._handleAutomationClicked}
-          .items=${this.automations.map((automation) =>
-            this._localizeDeviceAutomation(this.hass, automation)
+        <ha-chip-set>
+          ${automations.map(
+            (automation, idx) =>
+              html`
+                <ha-chip
+                  .index=${idx}
+                  @click=${this._handleAutomationClicked}
+                  class=${automation.metadata?.secondary ? "secondary" : ""}
+                >
+                  ${this._localizeDeviceAutomation(
+                    this.hass,
+                    this._entityReg,
+                    automation
+                  )}
+                </ha-chip>
+              `
           )}
-        >
         </ha-chip-set>
+        ${!this._showSecondary && automations.length < this.automations.length
+          ? html`<button class="link" @click=${this._toggleSecondary}>
+              Show ${this.automations.length - automations.length} more...
+            </button>`
+          : ""}
       </div>
     `;
   }
 
+  private _toggleSecondary() {
+    this._showSecondary = !this._showSecondary;
+  }
+
   private _handleAutomationClicked(ev: CustomEvent) {
-    const automation = this.automations[ev.detail.index];
+    const automation = { ...this.automations[(ev.currentTarget as any).index] };
     if (!automation) {
       return;
     }
+    delete automation.metadata;
     if (this.script) {
       showScriptEditor({ sequence: [automation as DeviceAction] });
+      fireEvent(this, "entry-selected");
       return;
     }
     const data = {};
     data[this.type] = [automation];
     showAutomationEditor(data);
+    fireEvent(this, "entry-selected");
   }
 
-  static get styles(): CSSResultGroup {
-    return css`
+  static styles = [
+    buttonLinkStyle,
+    css`
       h3 {
         color: var(--primary-text-color);
       }
-    `;
-  }
+      .secondary {
+        --ha-chip-background-color: rgba(var(--rgb-primary-text-color), 0.07);
+      }
+      button.link {
+        color: var(--primary-color);
+      }
+    `,
+  ];
 }

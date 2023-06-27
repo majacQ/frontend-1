@@ -1,14 +1,13 @@
 import "@material/mwc-button";
-import "@material/mwc-icon-button/mwc-icon-button";
 import { mdiHelpCircle } from "@mdi/js";
-import { css, CSSResultGroup, html, LitElement, TemplateResult } from "lit";
+import { CSSResultGroup, html, LitElement, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators";
 import { fireEvent } from "../../../common/dom/fire_event";
 import { computeRTLDirection } from "../../../common/util/compute_rtl";
 import "../../../components/ha-circular-progress";
 import "../../../components/ha-dialog";
 import "../../../components/ha-formfield";
-import "../../../components/ha-svg-icon";
+import "../../../components/ha-icon-button";
 import "../../../components/ha-switch";
 import "../../../components/ha-yaml-editor";
 import type { LovelaceConfig } from "../../../data/lovelace";
@@ -47,9 +46,9 @@ export class HuiSaveConfig extends LitElement implements HassDialog {
     return true;
   }
 
-  protected render(): TemplateResult {
+  protected render() {
     if (!this._params) {
-      return html``;
+      return nothing;
     }
     return html`
       <ha-dialog
@@ -67,9 +66,10 @@ export class HuiSaveConfig extends LitElement implements HassDialog {
             rel="noreferrer"
             dir=${computeRTLDirection(this.hass!)}
           >
-            <mwc-icon-button>
-              <ha-svg-icon .path=${mdiHelpCircle}></ha-svg-icon>
-            </mwc-icon-button>
+            <ha-icon-button
+              .path=${mdiHelpCircle}
+              .label=${this.hass!.localize("ui.common.help")}
+            ></ha-icon-button>
           </a>`}
       >
         <div>
@@ -93,6 +93,7 @@ export class HuiSaveConfig extends LitElement implements HassDialog {
                   <ha-switch
                     .checked=${this._emptyConfig}
                     @change=${this._emptyConfigChanged}
+                    dialogInitialFocus
                   ></ha-switch
                 ></ha-formfield>
               `
@@ -113,23 +114,20 @@ export class HuiSaveConfig extends LitElement implements HassDialog {
                   )}
                 </p>
                 <ha-yaml-editor
+                  .hass=${this.hass}
                   .defaultValue=${this._params!.lovelace.config}
+                  dialogInitialFocus
                 ></ha-yaml-editor>
               `}
         </div>
         ${this._params.mode === "storage"
           ? html`
-              <mwc-button
-                slot="primaryAction"
-                .label=${this.hass!.localize("ui.common.cancel")}
-                @click=${this.closeDialog}
-              ></mwc-button>
+              <mwc-button slot="primaryAction" @click=${this.closeDialog}>
+                ${this.hass!.localize("ui.common.cancel")}
+              </mwc-button>
               <mwc-button
                 slot="primaryAction"
                 ?disabled=${this._saving}
-                aria-label=${this.hass!.localize(
-                  "ui.panel.lovelace.editor.save_config.save"
-                )}
                 @click=${this._saveConfig}
               >
                 ${this._saving
@@ -145,13 +143,11 @@ export class HuiSaveConfig extends LitElement implements HassDialog {
               </mwc-button>
             `
           : html`
-              <mwc-button
-                slot="primaryAction"
-                .label=${this.hass!.localize(
+              <mwc-button slot="primaryAction" @click=${this.closeDialog}>
+                ${this.hass!.localize(
                   "ui.panel.lovelace.editor.save_config.close"
-                )}
-                @click=${this.closeDialog}
-              ></mwc-button>
+                )}</mwc-button
+              >
             `}
       </ha-dialog>
     `;
@@ -187,36 +183,14 @@ export class HuiSaveConfig extends LitElement implements HassDialog {
       lovelace.setEditMode(true);
       this._saving = false;
       this.closeDialog();
-    } catch (err) {
+    } catch (err: any) {
       alert(`Saving failed: ${err.message}`);
       this._saving = false;
     }
   }
 
   static get styles(): CSSResultGroup {
-    return [
-      haStyleDialog,
-      css`
-        @media all and (max-width: 450px), all and (max-height: 500px) {
-          /* overrule the ha-style-dialog max-height on small screens */
-          ha-paper-dialog {
-            max-height: 100%;
-            height: 100%;
-          }
-        }
-        @media all and (min-width: 660px) {
-          ha-paper-dialog {
-            width: 650px;
-          }
-        }
-        ha-paper-dialog {
-          max-width: 650px;
-        }
-        ha-switch {
-          padding-bottom: 16px;
-        }
-      `,
-    ];
+    return [haStyleDialog];
   }
 }
 

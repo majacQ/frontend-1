@@ -1,20 +1,20 @@
 import { TemplateResult } from "lit";
 import { fireEvent } from "../../common/dom/fire_event";
-import { HaFormSchema } from "../../components/ha-form/ha-form";
+import type { HaFormSchema } from "../../components/ha-form/types";
 import {
   DataEntryFlowStep,
   DataEntryFlowStepAbort,
   DataEntryFlowStepCreateEntry,
   DataEntryFlowStepExternal,
   DataEntryFlowStepForm,
+  DataEntryFlowStepMenu,
   DataEntryFlowStepProgress,
 } from "../../data/data_entry_flow";
-import { HomeAssistant } from "../../types";
+import type { IntegrationManifest } from "../../data/integration";
+import type { HomeAssistant } from "../../types";
 
 export interface FlowConfig {
   loadDevicesAndAreas: boolean;
-
-  getFlowHandlers?: (hass: HomeAssistant) => Promise<string[]>;
 
   createFlow(hass: HomeAssistant, handler: string): Promise<DataEntryFlowStep>;
 
@@ -49,10 +49,27 @@ export interface FlowConfig {
     field: HaFormSchema
   ): string;
 
+  renderShowFormStepFieldHelper(
+    hass: HomeAssistant,
+    step: DataEntryFlowStepForm,
+    field: HaFormSchema
+  ): TemplateResult | string;
+
   renderShowFormStepFieldError(
     hass: HomeAssistant,
     step: DataEntryFlowStepForm,
     error: string
+  ): string;
+
+  renderShowFormStepFieldLocalizeValue(
+    hass: HomeAssistant,
+    step: DataEntryFlowStepForm,
+    key: string
+  ): string;
+
+  renderShowFormStepSubmitButton(
+    hass: HomeAssistant,
+    step: DataEntryFlowStepForm
   ): string;
 
   renderExternalStepHeader(
@@ -79,14 +96,47 @@ export interface FlowConfig {
     hass: HomeAssistant,
     step: DataEntryFlowStepProgress
   ): TemplateResult | "";
+
+  renderMenuHeader(hass: HomeAssistant, step: DataEntryFlowStepMenu): string;
+
+  renderMenuDescription(
+    hass: HomeAssistant,
+    step: DataEntryFlowStepMenu
+  ): TemplateResult | "";
+
+  renderMenuOption(
+    hass: HomeAssistant,
+    step: DataEntryFlowStepMenu,
+    option: string
+  ): string;
+
+  renderLoadingDescription(
+    hass: HomeAssistant,
+    loadingReason: LoadingReason,
+    handler?: string,
+    step?: DataEntryFlowStep | null
+  ): string;
 }
+
+export type LoadingReason =
+  | "loading_handlers"
+  | "loading_flow"
+  | "loading_step"
+  | "loading_devices_areas";
 
 export interface DataEntryFlowDialogParams {
   startFlowHandler?: string;
+  searchQuery?: string;
   continueFlowId?: string;
-  dialogClosedCallback?: (params: { flowFinished: boolean }) => void;
+  manifest?: IntegrationManifest | null;
+  domain?: string;
+  dialogClosedCallback?: (params: {
+    flowFinished: boolean;
+    entryId?: string;
+  }) => void;
   flowConfig: FlowConfig;
   showAdvanced?: boolean;
+  dialogParentElement?: HTMLElement;
 }
 
 export const loadDataEntryFlowDialog = () => import("./dialog-data-entry-flow");
@@ -102,6 +152,7 @@ export const showFlowDialog = (
     dialogParams: {
       ...dialogParams,
       flowConfig,
+      dialogParentElement: element,
     },
   });
 };

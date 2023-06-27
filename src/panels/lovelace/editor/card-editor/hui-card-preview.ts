@@ -1,4 +1,3 @@
-import "@polymer/paper-input/paper-textarea";
 import { PropertyValues, ReactiveElement } from "lit";
 import { property } from "lit/decorators";
 import { computeRTL } from "../../../../common/util/compute_rtl";
@@ -62,7 +61,7 @@ export class HuiCardPreview extends ReactiveElement {
       if (!this._error && oldConfig && this.config.type === oldConfig.type) {
         try {
           this._element.setConfig(this.config);
-        } catch (err) {
+        } catch (err: any) {
           this._createCard(createErrorCardConfig(err.message, this.config));
         }
       } else {

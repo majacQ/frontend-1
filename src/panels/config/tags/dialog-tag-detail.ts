@@ -1,11 +1,19 @@
 import "@material/mwc-button";
-import "@polymer/paper-input/paper-input";
-import { css, CSSResultGroup, html, LitElement, TemplateResult } from "lit";
+import {
+  css,
+  CSSResultGroup,
+  html,
+  LitElement,
+  TemplateResult,
+  nothing,
+} from "lit";
 import { customElement, property, state } from "lit/decorators";
 import { fireEvent } from "../../../common/dom/fire_event";
+import "../../../components/ha-alert";
 import { createCloseHeading } from "../../../components/ha-dialog";
 import "../../../components/ha-formfield";
 import "../../../components/ha-switch";
+import "../../../components/ha-textfield";
 import { Tag, UpdateTagParams } from "../../../data/tag";
 import { HassDialog } from "../../../dialogs/make-dialog-manager";
 import { haStyleDialog } from "../../../resources/styles";
@@ -17,7 +25,8 @@ const QR_LOGO_URL = "/static/icons/favicon-192x192.png";
 @customElement("dialog-tag-detail")
 class DialogTagDetail
   extends LitElement
-  implements HassDialog<TagDetailDialogParams> {
+  implements HassDialog<TagDetailDialogParams>
+{
   @property({ attribute: false }) public hass!: HomeAssistant;
 
   @state() private _id?: string;
@@ -41,6 +50,8 @@ class DialogTagDetail
       this._id = "";
       this._name = "";
     }
+
+    this._generateQR();
   }
 
   public closeDialog(): void {
@@ -49,9 +60,9 @@ class DialogTagDetail
     fireEvent(this, "dialog-closed", { dialog: this.localName });
   }
 
-  protected render(): TemplateResult {
+  protected render() {
     if (!this._params) {
-      return html``;
+      return nothing;
     }
 
     return html`
@@ -68,7 +79,9 @@ class DialogTagDetail
         )}
       >
         <div>
-          ${this._error ? html` <div class="error">${this._error}</div> ` : ""}
+          ${this._error
+            ? html`<ha-alert alert-type="error">${this._error}</ha-alert>`
+            : ""}
           <div class="form">
             ${this._params.entry
               ? html`${this.hass!.localize(
@@ -76,30 +89,30 @@ class DialogTagDetail
                 )}:
                 ${this._params.entry.id}`
               : ""}
-            <paper-input
+            <ha-textfield
               dialogInitialFocus
               .value=${this._name}
               .configValue=${"name"}
-              @value-changed=${this._valueChanged}
-              .label="${this.hass!.localize("ui.panel.config.tag.detail.name")}"
-              .errorMessage="${this.hass!.localize(
+              @input=${this._valueChanged}
+              .label=${this.hass!.localize("ui.panel.config.tag.detail.name")}
+              .errorMessage=${this.hass!.localize(
                 "ui.panel.config.tag.detail.required_error_msg"
-              )}"
+              )}
               required
               auto-validate
-            ></paper-input>
+            ></ha-textfield>
             ${!this._params.entry
-              ? html` <paper-input
-                  .value=${this._id}
+              ? html`<ha-textfield
+                  .value=${this._id || ""}
                   .configValue=${"id"}
-                  @value-changed=${this._valueChanged}
+                  @input=${this._valueChanged}
                   .label=${this.hass!.localize(
                     "ui.panel.config.tag.detail.tag_id"
                   )}
                   .placeholder=${this.hass!.localize(
                     "ui.panel.config.tag.detail.tag_id_placeholder"
                   )}
-                ></paper-input>`
+                ></ha-textfield>`
               : ""}
           </div>
           ${this._params.entry
@@ -120,16 +133,9 @@ class DialogTagDetail
                     )}
                   </p>
                 </div>
-
-                <div id="qr">
-                  ${this._qrCode
-                    ? this._qrCode
-                    : html`
-                        <mwc-button @click=${this._generateQR}
-                          >Generate QR code
-                        </mwc-button>
-                      `}
-                </div>
+                ${this._qrCode
+                  ? html` <div id="qr">${this._qrCode}</div> `
+                  : ""}
               `
             : ``}
         </div>
@@ -138,16 +144,16 @@ class DialogTagDetail
               <mwc-button
                 slot="secondaryAction"
                 class="warning"
-                @click="${this._deleteEntry}"
+                @click=${this._deleteEntry}
                 .disabled=${this._submitting}
               >
                 ${this.hass!.localize("ui.panel.config.tag.detail.delete")}
               </mwc-button>
             `
-          : html``}
+          : nothing}
         <mwc-button
           slot="primaryAction"
-          @click="${this._updateEntry}"
+          @click=${this._updateEntry}
           .disabled=${this._submitting}
         >
           ${this._params.entry
@@ -157,7 +163,7 @@ class DialogTagDetail
         ${this._params.openWrite && !this._params.entry
           ? html` <mwc-button
               slot="primaryAction"
-              @click="${this._updateWriteEntry}"
+              @click=${this._updateWriteEntry}
               .disabled=${this._submitting}
             >
               ${this.hass!.localize(
@@ -169,11 +175,12 @@ class DialogTagDetail
     `;
   }
 
-  private _valueChanged(ev: CustomEvent) {
-    const configValue = (ev.target as any).configValue;
+  private _valueChanged(ev: Event) {
+    const target = ev.target as any;
+    const configValue = target.configValue;
 
     this._error = undefined;
-    this[`_${configValue}`] = ev.detail.value;
+    this[`_${configValue}`] = target.value;
   }
 
   private async _updateEntry() {
@@ -189,7 +196,7 @@ class DialogTagDetail
         newValue = await this._params!.createEntry(values, this._id);
       }
       this.closeDialog();
-    } catch (err) {
+    } catch (err: any) {
       this._error = err ? err.message : "Unknown error";
     } finally {
       this._submitting = false;
@@ -224,6 +231,9 @@ class DialogTagDetail
       {
         width: 180,
         errorCorrectionLevel: "Q",
+        color: {
+          light: "#fff",
+        },
       }
     );
     const context = canvas.getContext("2d");
@@ -233,7 +243,7 @@ class DialogTagDetail
     await new Promise((resolve) => {
       imageObj.onload = resolve;
     });
-    context.drawImage(
+    context?.drawImage(
       imageObj,
       canvas.width / 3,
       canvas.height / 3,
@@ -241,7 +251,14 @@ class DialogTagDetail
       canvas.height / 3
     );
 
-    this._qrCode = html`<img src=${canvas.toDataURL()}></img>`;
+    this._qrCode = html`<img
+        alt=${this.hass.localize(
+          "ui.panel.config.tag.qr_code_image",
+          "name",
+          this._name
+        )}
+        src=${canvas.toDataURL()}
+      ></img>`;
   }
 
   static get styles(): CSSResultGroup {

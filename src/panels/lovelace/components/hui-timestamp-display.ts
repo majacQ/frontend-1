@@ -1,15 +1,21 @@
-import { html, LitElement, PropertyValues, TemplateResult } from "lit";
+import { HassConfig } from "home-assistant-js-websocket";
+import { html, LitElement, PropertyValues, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators";
 import { formatDate } from "../../../common/datetime/format_date";
 import { formatDateTime } from "../../../common/datetime/format_date_time";
 import { formatTime } from "../../../common/datetime/format_time";
-import relativeTime from "../../../common/datetime/relative_time";
+import { relativeTime } from "../../../common/datetime/relative_time";
+import { capitalizeFirstLetter } from "../../../common/string/capitalize-first-letter";
 import { FrontendLocaleData } from "../../../data/translation";
 import { HomeAssistant } from "../../../types";
-import { TimestampRenderingFormats } from "./types";
+import { TimestampRenderingFormat } from "./types";
 
 const FORMATS: {
-  [key: string]: (ts: Date, lang: FrontendLocaleData) => string;
+  [key: string]: (
+    ts: Date,
+    lang: FrontendLocaleData,
+    config: HassConfig
+  ) => string;
 } = {
   date: formatDate,
   datetime: formatDateTime,
@@ -23,7 +29,9 @@ class HuiTimestampDisplay extends LitElement {
 
   @property() public ts?: Date;
 
-  @property() public format?: TimestampRenderingFormats;
+  @property() public format?: TimestampRenderingFormat;
+
+  @property({ type: Boolean }) public capitalize = false;
 
   @state() private _relative?: string;
 
@@ -43,9 +51,9 @@ class HuiTimestampDisplay extends LitElement {
     this._clearInterval();
   }
 
-  protected render(): TemplateResult {
+  protected render() {
     if (!this.ts || !this.hass) {
-      return html``;
+      return nothing;
     }
 
     if (isNaN(this.ts.getTime())) {
@@ -60,7 +68,9 @@ class HuiTimestampDisplay extends LitElement {
       return html` ${this._relative} `;
     }
     if (format in FORMATS) {
-      return html` ${FORMATS[format](this.ts, this.hass.locale)} `;
+      return html`
+        ${FORMATS[format](this.ts, this.hass.locale, this.hass.config)}
+      `;
     }
     return html`${this.hass.localize(
       "ui.panel.lovelace.components.timestamp-display.invalid_format"
@@ -100,14 +110,15 @@ class HuiTimestampDisplay extends LitElement {
   }
 
   private _updateRelative(): void {
-    if (this.ts && this.hass!.localize) {
+    if (this.ts && this.hass?.localize) {
       this._relative =
         this._format === "relative"
-          ? relativeTime(this.ts, this.hass!.localize)
-          : (this._relative = relativeTime(new Date(), this.hass!.localize, {
-              compareTime: this.ts,
-              includeTense: false,
-            }));
+          ? relativeTime(this.ts, this.hass!.locale)
+          : relativeTime(new Date(), this.hass!.locale, this.ts, false);
+
+      this._relative = this.capitalize
+        ? capitalizeFirstLetter(this._relative)
+        : this._relative;
     }
   }
 }

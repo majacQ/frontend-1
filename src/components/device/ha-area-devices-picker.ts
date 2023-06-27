@@ -1,25 +1,12 @@
 import "@material/mwc-button/mwc-button";
-import "@material/mwc-icon-button/mwc-icon-button";
-import { mdiClose, mdiMenuDown, mdiMenuUp } from "@mdi/js";
-import "@polymer/paper-input/paper-input";
-import "@polymer/paper-item/paper-item";
-import "@polymer/paper-item/paper-item-body";
-import "@polymer/paper-listbox/paper-listbox";
-import "@vaadin/vaadin-combo-box/theme/material/vaadin-combo-box-light";
+import { ComboBoxLitRenderer } from "@vaadin/combo-box/lit";
 import { UnsubscribeFunc } from "home-assistant-js-websocket";
-import {
-  css,
-  CSSResultGroup,
-  html,
-  LitElement,
-  PropertyValues,
-  TemplateResult,
-} from "lit";
+import { html, LitElement, PropertyValues, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators";
 import memoizeOne from "memoize-one";
 import { fireEvent } from "../../common/dom/fire_event";
 import { computeDomain } from "../../common/entity/compute_domain";
-import { compare } from "../../common/string/compare";
+import { stringCompare } from "../../common/string/compare";
 import {
   AreaRegistryEntry,
   subscribeAreaRegistry,
@@ -34,11 +21,10 @@ import {
   subscribeEntityRegistry,
 } from "../../data/entity_registry";
 import { SubscribeMixin } from "../../mixins/subscribe-mixin";
-import { PolymerChangedEvent } from "../../polymer-types";
-import { HomeAssistant } from "../../types";
+import { ValueChangedEvent, HomeAssistant } from "../../types";
+import "../ha-icon-button";
 import "../ha-svg-icon";
 import "./ha-devices-picker";
-import { ComboBoxLitRenderer, comboBoxRenderer } from "lit-vaadin-helpers";
 
 interface DevicesByArea {
   [areaId: string]: AreaDevices;
@@ -50,28 +36,12 @@ interface AreaDevices {
   devices: string[];
 }
 
-const rowRenderer: ComboBoxLitRenderer<AreaDevices> = (item) => html`<style>
-    paper-item {
-      width: 100%;
-      margin: -10px 0;
-      padding: 0;
-    }
-    mwc-icon-button {
-      float: right;
-    }
-    .devices {
-      display: none;
-    }
-    .devices.visible {
-      display: block;
-    }
-  </style>
-  <paper-item>
-    <paper-item-body two-line="">
-      <div class="name">${item.name}</div>
-      <div secondary>${item.devices.length} devices</div>
-    </paper-item-body>
-  </paper-item>`;
+const rowRenderer: ComboBoxLitRenderer<AreaDevices> = (
+  item
+) => html`<mwc-list-item twoline>
+  <span>${item.name}</span>
+  <span slot="secondary">${item.devices.length} devices</span>
+</mwc-list-item>`;
 
 @customElement("ha-area-devices-picker")
 export class HaAreaDevicesPicker extends SubscribeMixin(LitElement) {
@@ -108,9 +78,6 @@ export class HaAreaDevicesPicker extends SubscribeMixin(LitElement) {
    */
   @property({ type: Array, attribute: "include-device-classes" })
   public includeDeviceClasses?: string[];
-
-  @property({ type: Boolean })
-  private _opened?: boolean;
 
   @state() private _areaPicker = true;
 
@@ -219,7 +186,11 @@ export class HaAreaDevicesPicker extends SubscribeMixin(LitElement) {
 
       const sorted = Object.keys(devicesByArea)
         .sort((a, b) =>
-          compare(devicesByArea[a].name || "", devicesByArea[b].name || "")
+          stringCompare(
+            devicesByArea[a].name || "",
+            devicesByArea[b].name || "",
+            this.hass.locale.language
+          )
         )
         .map((key) => devicesByArea[key]);
 
@@ -258,9 +229,9 @@ export class HaAreaDevicesPicker extends SubscribeMixin(LitElement) {
     }
   }
 
-  protected render(): TemplateResult {
+  protected render() {
     if (!this._devices || !this._areas || !this._entities) {
-      return html``;
+      return nothing;
     }
     const areas = this._getAreasWithDevices(
       this._devices,
@@ -291,80 +262,35 @@ export class HaAreaDevicesPicker extends SubscribeMixin(LitElement) {
       `;
     }
     return html`
-      <vaadin-combo-box-light
+      <ha-combo-box
+        .hass=${this.hass}
         item-value-path="id"
         item-id-path="id"
         item-label-path="name"
         .items=${areas}
         .value=${this._value}
-        ${comboBoxRenderer(rowRenderer)}
-        @opened-changed=${this._openedChanged}
+        .renderer=${rowRenderer}
+        .label=${this.label === undefined && this.hass
+          ? this.hass.localize("ui.components.device-picker.device")
+          : `${this.label} in area`}
         @value-changed=${this._areaPicked}
       >
-        <paper-input
-          .label=${this.label === undefined && this.hass
-            ? this.hass.localize("ui.components.device-picker.device")
-            : `${this.label} in area`}
-          class="input"
-          autocapitalize="none"
-          autocomplete="off"
-          autocorrect="off"
-          spellcheck="false"
-        >
-          <div class="suffix" slot="suffix">
-            ${this.value
-              ? html`<mwc-icon-button
-                  class="clear-button"
-                  .label=${this.hass.localize(
-                    "ui.components.device-picker.clear"
-                  )}
-                  @click=${this._clearValue}
-                  no-ripple
-                >
-                  <ha-svg-icon .path=${mdiClose}></ha-svg-icon>
-                </mwc-icon-button> `
-              : ""}
-            ${areas.length > 0
-              ? html`
-                  <mwc-icon-button
-                    .label=${this.hass.localize(
-                      "ui.components.device-picker.show_devices"
-                    )}
-                    class="toggle-button"
-                  >
-                    <ha-svg-icon
-                      .path=${this._opened ? mdiMenuUp : mdiMenuDown}
-                    ></ha-svg-icon>
-                  </mwc-icon-button>
-                `
-              : ""}
-          </div>
-        </paper-input>
-      </vaadin-combo-box-light>
-      <mwc-button @click=${this._switchPicker}
-        >Choose individual devices</mwc-button
-      >
+      </ha-combo-box>
+      <mwc-button @click=${this._switchPicker}>
+        Choose individual devices
+      </mwc-button>
     `;
-  }
-
-  private _clearValue(ev: Event) {
-    ev.stopPropagation();
-    this._setValue([]);
   }
 
   private get _value() {
     return this.value || [];
   }
 
-  private _openedChanged(ev: PolymerChangedEvent<boolean>) {
-    this._opened = ev.detail.value;
-  }
-
   private async _switchPicker() {
     this._areaPicker = !this._areaPicker;
   }
 
-  private async _areaPicked(ev: PolymerChangedEvent<string>) {
+  private async _areaPicked(ev: ValueChangedEvent<string>) {
     const value = ev.detail.value;
     let selectedDevices = [];
     const target = ev.target as any;
@@ -390,22 +316,6 @@ export class HaAreaDevicesPicker extends SubscribeMixin(LitElement) {
       fireEvent(this, "value-changed", { value: selectedDevices });
       fireEvent(this, "change");
     }, 0);
-  }
-
-  static get styles(): CSSResultGroup {
-    return css`
-      .suffix {
-        display: flex;
-      }
-      mwc-icon-button {
-        --mdc-icon-button-size: 24px;
-        padding: 0px 2px;
-        color: var(--secondary-text-color);
-      }
-      [hidden] {
-        display: none;
-      }
-    `;
   }
 }
 

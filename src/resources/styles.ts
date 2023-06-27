@@ -3,7 +3,7 @@ import { css } from "lit";
 export const darkStyles = {
   "primary-background-color": "#111111",
   "card-background-color": "#1c1c1c",
-  "secondary-background-color": "#202020",
+  "secondary-background-color": "#282828",
   "primary-text-color": "#e1e1e1",
   "secondary-text-color": "#9b9b9b",
   "disabled-text-color": "#6f6f6f",
@@ -13,6 +13,20 @@ export const darkStyles = {
   "switch-unchecked-track-color": "#9b9b9b",
   "divider-color": "rgba(225, 225, 225, .12)",
   "mdc-ripple-color": "#AAAAAA",
+
+  "input-idle-line-color": "rgba(255, 255, 255, 0.42)",
+  "input-hover-line-color": "rgba(255, 255, 255, 0.87)",
+  "input-disabled-line-color": "rgba(255, 255, 255, 0.06)",
+  "input-outlined-idle-border-color": "rgba(255, 255, 255, 0.38)",
+  "input-outlined-hover-border-color": "rgba(255, 255, 255, 0.87)",
+  "input-outlined-disabled-border-color": "rgba(255, 255, 255, 0.06)",
+  "input-fill-color": "rgba(255, 255, 255, 0.05)",
+  "input-disabled-fill-color": "rgba(255, 255, 255, 0.02)",
+  "input-ink-color": "rgba(255, 255, 255, 0.87)",
+  "input-label-ink-color": "rgba(255, 255, 255, 0.6)",
+  "input-disabled-ink-color": "rgba(255, 255, 255, 0.37)",
+  "input-dropdown-icon-color": "rgba(255, 255, 255, 0.54)",
+
   "codemirror-keyword": "#C792EA",
   "codemirror-operator": "#89DDFF",
   "codemirror-variable": "#f07178",
@@ -31,11 +45,16 @@ export const darkStyles = {
   "codemirror-property": "#C792EA",
   "codemirror-qualifier": "#DECB6B",
   "codemirror-type": "#DECB6B",
+  "energy-grid-return-color": "#a280db",
+  "map-filter":
+    "invert(.9) hue-rotate(170deg) brightness(1.5) contrast(1.2) saturate(.3)",
+  "disabled-color": "#464646",
 };
 
 export const derivedStyles = {
-  "error-state-color": "var(--error-color)",
-  "state-icon-unavailable-color": "var(--disabled-text-color)",
+  "state-icon-error-color": "var(--error-state-color, var(--error-color))",
+  "state-unavailable-color":
+    "var(--state-icon-unavailable-color, var(--disabled-text-color))",
   "sidebar-text-color": "var(--primary-text-color)",
   "sidebar-background-color": "var(--card-background-color)",
   "sidebar-selected-text-color": "var(--primary-color)",
@@ -50,13 +69,13 @@ export const derivedStyles = {
   "switch-unchecked-track-color": "var(--switch-unchecked-color, #000000)",
   "slider-color": "var(--primary-color)",
   "slider-secondary-color": "var(--light-primary-color)",
-  "slider-bar-color": "var(--disabled-text-color)",
-  "label-badge-grey": "var(--paper-grey-500)",
+  "slider-track-color": "var(--scrollbar-thumb-color)",
   "label-badge-background-color": "var(--card-background-color)",
   "label-badge-text-color": "rgba(var(--rgb-primary-text-color), 0.8)",
   "paper-listbox-background-color": "var(--card-background-color)",
   "paper-item-icon-color": "var(--state-icon-color)",
   "paper-item-icon-active-color": "var(--state-icon-active-color)",
+  "table-header-background-color": "var(--input-fill-color)",
   "table-row-background-color": "var(--primary-background-color)",
   "table-row-alternative-background-color": "var(--secondary-background-color)",
   "paper-slider-knob-color": "var(--slider-color)",
@@ -65,9 +84,11 @@ export const derivedStyles = {
   "paper-slider-pin-start-color": "var(--slider-color)",
   "paper-slider-active-color": "var(--slider-color)",
   "paper-slider-secondary-color": "var(--slider-secondary-color)",
-  "paper-slider-container-color": "var(--slider-bar-color)",
+  "paper-slider-container-color": "var(--slider-track-color)",
   "data-table-background-color": "var(--card-background-color)",
   "markdown-code-background-color": "var(--primary-background-color)",
+
+  // https://github.com/material-components/material-web/blob/master/docs/theming.md
   "mdc-theme-primary": "var(--primary-color)",
   "mdc-theme-secondary": "var(--accent-color)",
   "mdc-theme-background": "var(--primary-background-color)",
@@ -78,13 +99,11 @@ export const derivedStyles = {
   "mdc-theme-text-disabled-on-light": "var(--disabled-text-color)",
   "mdc-theme-text-primary-on-background": "var(--primary-text-color)",
   "mdc-theme-text-secondary-on-background": "var(--secondary-text-color)",
+  "mdc-theme-text-hint-on-background": "var(--secondary-text-color)",
   "mdc-theme-text-icon-on-background": "var(--secondary-text-color)",
+  "mdc-theme-error": "var(--error-color)",
   "app-header-text-color": "var(--text-primary-color)",
   "app-header-background-color": "var(--primary-color)",
-  "material-body-text-color": "var(--primary-text-color)",
-  "material-background-color": "var(--card-background-color)",
-  "material-secondary-background-color": "var(--secondary-background-color)",
-  "material-secondary-text-color": "var(--secondary-text-color)",
   "mdc-checkbox-unchecked-color": "rgba(var(--rgb-primary-text-color), 0.54)",
   "mdc-checkbox-disabled-color": "var(--disabled-text-color)",
   "mdc-radio-unchecked-color": "rgba(var(--rgb-primary-text-color), 0.54)",
@@ -93,7 +112,46 @@ export const derivedStyles = {
   "mdc-button-disabled-ink-color": "var(--disabled-text-color)",
   "mdc-button-outline-color": "var(--divider-color)",
   "mdc-dialog-scroll-divider-color": "var(--divider-color)",
+  "mdc-dialog-heading-ink-color": "var(--primary-text-color)",
+  "mdc-dialog-content-ink-color": "var(--primary-text-color)",
+
+  "mdc-text-field-idle-line-color": "var(--input-idle-line-color)",
+  "mdc-text-field-hover-line-color": "var(--input-hover-line-color)",
+  "mdc-text-field-disabled-line-color": "var(--input-disabled-line-color)",
+  "mdc-text-field-outlined-idle-border-color":
+    "var(--input-outlined-idle-border-color)",
+  "mdc-text-field-outlined-hover-border-color":
+    "var(--input-outlined-hover-border-color)",
+  "mdc-text-field-outlined-disabled-border-color":
+    "var(--input-outlined-disabled-border-color)",
+  "mdc-text-field-fill-color": "var(--input-fill-color)",
+  "mdc-text-field-disabled-fill-color": "var(--input-disabled-fill-color)",
+  "mdc-text-field-ink-color": "var(--input-ink-color)",
+  "mdc-text-field-label-ink-color": "var(--input-label-ink-color)",
+  "mdc-text-field-disabled-ink-color": "var(--input-disabled-ink-color)",
+
+  "mdc-select-idle-line-color": "var(--input-idle-line-color)",
+  "mdc-select-hover-line-color": "var(--input-hover-line-color)",
+  "mdc-select-outlined-idle-border-color":
+    "var(--input-outlined-idle-border-color)",
+  "mdc-select-outlined-hover-border-color":
+    "var(--input-outlined-hover-border-color)",
+  "mdc-select-outlined-disabled-border-color":
+    "var(--input-outlined-disabled-border-color)",
+  "mdc-select-fill-color": "var(--input-fill-color)",
+  "mdc-select-disabled-fill-color": "var(--input-disabled-fill-color)",
+  "mdc-select-ink-color": "var(--input-ink-color)",
+  "mdc-select-label-ink-color": "var(--input-label-ink-color)",
+  "mdc-select-disabled-ink-color": "var(--input-disabled-ink-color)",
+  "mdc-select-dropdown-icon-color": "var(--input-dropdown-icon-color)",
+  "mdc-select-disabled-dropdown-icon-color": "var(--input-disabled-ink-color)",
+
   "chip-background-color": "rgba(var(--rgb-primary-text-color), 0.15)",
+  // Vaadin
+  "material-body-text-color": "var(--primary-text-color)",
+  "material-background-color": "var(--card-background-color)",
+  "material-secondary-background-color": "var(--secondary-background-color)",
+  "material-secondary-text-color": "var(--secondary-text-color)",
 };
 
 export const buttonLinkStyle = css`
@@ -106,6 +164,7 @@ export const buttonLinkStyle = css`
     text-align: left;
     text-decoration: underline;
     cursor: pointer;
+    outline: none;
   }
 `;
 
@@ -116,22 +175,6 @@ export const haStyle = css`
     font-size: var(--paper-font-body1_-_font-size);
     font-weight: var(--paper-font-body1_-_font-weight);
     line-height: var(--paper-font-body1_-_line-height);
-  }
-
-  app-header-layout,
-  ha-app-layout {
-    background-color: var(--primary-background-color);
-  }
-
-  app-header,
-  app-toolbar {
-    background-color: var(--app-header-background-color);
-    font-weight: 400;
-    color: var(--app-header-text-color, white);
-  }
-
-  app-toolbar {
-    height: var(--header-height);
   }
 
   app-header div[sticky] {
@@ -251,68 +294,14 @@ export const haStyle = css`
 `;
 
 export const haStyleDialog = css`
-  /* prevent clipping of positioned elements */
-  paper-dialog-scrollable {
-    --paper-dialog-scrollable: {
-      -webkit-overflow-scrolling: auto;
-    }
-  }
-
-  /* force smooth scrolling for iOS 10 */
-  paper-dialog-scrollable.can-scroll {
-    --paper-dialog-scrollable: {
-      -webkit-overflow-scrolling: touch;
-    }
-  }
-
-  .paper-dialog-buttons {
-    align-items: flex-end;
-    padding: 8px;
-    padding-bottom: max(env(safe-area-inset-bottom), 8px);
-  }
-
-  @media all and (min-width: 450px) and (min-height: 500px) {
-    ha-paper-dialog {
-      min-width: 400px;
-    }
-  }
-
-  @media all and (max-width: 450px), all and (max-height: 500px) {
-    paper-dialog,
-    ha-paper-dialog {
-      margin: 0;
-      width: calc(
-        100% - env(safe-area-inset-right) - env(safe-area-inset-left)
-      ) !important;
-      min-width: calc(
-        100% - env(safe-area-inset-right) - env(safe-area-inset-left)
-      ) !important;
-      max-width: calc(
-        100% - env(safe-area-inset-right) - env(safe-area-inset-left)
-      ) !important;
-      max-height: calc(100% - var(--header-height));
-
-      position: fixed !important;
-      bottom: 0px;
-      left: env(safe-area-inset-left);
-      right: env(safe-area-inset-right);
-      overflow: scroll;
-      border-bottom-left-radius: 0px;
-      border-bottom-right-radius: 0px;
-    }
-  }
-
   /* mwc-dialog (ha-dialog) styles */
   ha-dialog {
     --mdc-dialog-min-width: 400px;
     --mdc-dialog-max-width: 600px;
-    --mdc-dialog-heading-ink-color: var(--primary-text-color);
-    --mdc-dialog-content-ink-color: var(--primary-text-color);
     --justify-action-buttons: space-between;
   }
 
   ha-dialog .form {
-    padding-bottom: 24px;
     color: var(--primary-text-color);
   }
 
@@ -331,11 +320,12 @@ export const haStyleDialog = css`
       );
       --mdc-dialog-min-height: 100%;
       --mdc-dialog-max-height: 100%;
-      --mdc-shape-medium: 0px;
-      --vertial-align-dialog: flex-end;
+      --vertical-align-dialog: flex-end;
+      --ha-dialog-border-radius: 0;
     }
   }
-  mwc-button.warning {
+  mwc-button.warning,
+  ha-button.warning {
     --mdc-theme-primary: var(--error-color);
   }
   .error {

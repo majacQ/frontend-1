@@ -4,11 +4,11 @@ import {
   html,
   LitElement,
   PropertyValues,
-  TemplateResult,
+  nothing,
 } from "lit";
 import { customElement, property, state } from "lit/decorators";
 import { computeStateDisplay } from "../../../common/entity/compute_state_display";
-import { UNAVAILABLE_STATES } from "../../../data/entity";
+import { isUnavailableState } from "../../../data/entity";
 import { ActionHandlerEvent } from "../../../data/lovelace";
 import { SENSOR_DEVICE_CLASS_TIMESTAMP } from "../../../data/sensor";
 import { HomeAssistant } from "../../../types";
@@ -20,11 +20,11 @@ import { hasConfigOrEntityChanged } from "../common/has-changed";
 import "../components/hui-generic-entity-row";
 import "../components/hui-timestamp-display";
 import { createEntityNotFoundWarning } from "../components/hui-warning";
-import { TimestampRenderingFormats } from "../components/types";
+import { TimestampRenderingFormat } from "../components/types";
 import { LovelaceRow } from "./types";
 
 interface SensorEntityConfig extends EntitiesCardEntityConfig {
-  format?: TimestampRenderingFormats;
+  format?: TimestampRenderingFormat;
 }
 
 @customElement("hui-sensor-entity-row")
@@ -44,9 +44,9 @@ class HuiSensorEntityRow extends LitElement implements LovelaceRow {
     return hasConfigOrEntityChanged(this, changedProps);
   }
 
-  protected render(): TemplateResult {
+  protected render() {
     if (!this._config || !this.hass) {
-      return html``;
+      return nothing;
     }
 
     const stateObj = this.hass.states[this._config.entity];
@@ -62,7 +62,7 @@ class HuiSensorEntityRow extends LitElement implements LovelaceRow {
     return html`
       <hui-generic-entity-row .hass=${this.hass} .config=${this._config}>
         <div
-          class="text-content"
+          class="text-content value"
           @action=${this._handleAction}
           .actionHandler=${actionHandler({
             hasHold: hasAction(this._config.hold_action),
@@ -70,19 +70,21 @@ class HuiSensorEntityRow extends LitElement implements LovelaceRow {
           })}
         >
           ${stateObj.attributes.device_class ===
-            SENSOR_DEVICE_CLASS_TIMESTAMP &&
-          !UNAVAILABLE_STATES.includes(stateObj.state)
+            SENSOR_DEVICE_CLASS_TIMESTAMP && !isUnavailableState(stateObj.state)
             ? html`
                 <hui-timestamp-display
                   .hass=${this.hass}
                   .ts=${new Date(stateObj.state)}
                   .format=${this._config.format}
+                  capitalize
                 ></hui-timestamp-display>
               `
             : computeStateDisplay(
                 this.hass!.localize,
                 stateObj,
-                this.hass.locale
+                this.hass.locale,
+                this.hass.config,
+                this.hass.entities
               )}
         </div>
       </hui-generic-entity-row>
@@ -97,6 +99,9 @@ class HuiSensorEntityRow extends LitElement implements LovelaceRow {
     return css`
       div {
         text-align: right;
+      }
+      .value {
+        direction: ltr;
       }
     `;
   }

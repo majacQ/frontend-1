@@ -4,6 +4,10 @@ export const atLeastVersion = (
   minor: number,
   patch?: number
 ): boolean => {
+  if (__DEMO__) {
+    return true;
+  }
+
   const [haMajor, haMinor, haPatch] = version.split(".", 3);
 
   return (
@@ -17,4 +21,12 @@ export const atLeastVersion = (
       Number(haMinor) === minor &&
       Number(haPatch) >= patch)
   );
+};
+
+export const isDevVersion = (version: string): boolean => {
+  if (__DEMO__) {
+    return false;
+  }
+
+  return version.includes("dev");
 };

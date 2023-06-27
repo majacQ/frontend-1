@@ -1,8 +1,4 @@
-import { Layout1d, scroll } from "../../resources/lit-virtualizer";
 import "@material/mwc-list/mwc-list";
-import type { List } from "@material/mwc-list/mwc-list";
-import { SingleSelectedEvent } from "@material/mwc-list/mwc-list-foundation";
-import "@material/mwc-list/mwc-list-item";
 import type { ListItem } from "@material/mwc-list/mwc-list-item";
 import {
   mdiClose,
@@ -12,20 +8,20 @@ import {
   mdiReload,
   mdiServerNetwork,
 } from "@mdi/js";
-import { css, html, LitElement } from "lit";
+import { css, html, LitElement, nothing } from "lit";
 import { customElement, property, query, state } from "lit/decorators";
 import { ifDefined } from "lit/directives/if-defined";
 import { styleMap } from "lit/directives/style-map";
 import memoizeOne from "memoize-one";
 import { canShowPage } from "../../common/config/can_show_page";
 import { componentsWithService } from "../../common/config/components_with_service";
+import { isComponentLoaded } from "../../common/config/is_component_loaded";
 import { fireEvent } from "../../common/dom/fire_event";
 import { computeDomain } from "../../common/entity/compute_domain";
 import { computeStateName } from "../../common/entity/compute_state_name";
 import { domainIcon } from "../../common/entity/domain_icon";
 import { navigate } from "../../common/navigate";
-import "../../common/search/search-input";
-import { compare } from "../../common/string/compare";
+import { caseInsensitiveStringCompare } from "../../common/string/compare";
 import {
   fuzzyFilterSort,
   ScorableTextItem,
@@ -33,13 +29,16 @@ import {
 import { debounce } from "../../common/util/debounce";
 import "../../components/ha-chip";
 import "../../components/ha-circular-progress";
-import "../../components/ha-dialog";
-import "../../components/ha-header-bar";
+import "../../components/ha-icon-button";
+import "../../components/ha-list-item";
+import "../../components/ha-textfield";
+import { fetchHassioAddonsInfo } from "../../data/hassio/addon";
 import { domainToName } from "../../data/integration";
 import { getPanelNameTranslationKey } from "../../data/panel";
 import { PageNavigation } from "../../layouts/hass-tabs-subpage";
 import { configSections } from "../../panels/config/ha-panel-config";
-import { haStyleDialog } from "../../resources/styles";
+import { haStyleDialog, haStyleScrollbar } from "../../resources/styles";
+import { loadVirtualizer } from "../../resources/virtualizer";
 import { HomeAssistant } from "../../types";
 import {
   ConfirmationDialogParams,
@@ -88,126 +87,184 @@ export class QuickBar extends LitElement {
 
   @state() private _search = "";
 
-  @state() private _opened = false;
+  @state() private _open = false;
 
   @state() private _commandMode = false;
 
-  @state() private _done = false;
+  @state() private _opened = false;
 
-  @query("paper-input", false) private _filterInputField?: HTMLElement;
+  @state() private _narrow = false;
+
+  @state() private _hint?: string;
+
+  @query("ha-textfield", false) private _filterInputField?: HTMLElement;
 
   private _focusSet = false;
 
+  private _focusListElement?: ListItem | null;
+
   public async showDialog(params: QuickBarParams) {
     this._commandMode = params.commandMode || this._toggleIfAlreadyOpened();
+    this._hint = params.hint;
+    this._narrow = matchMedia(
+      "all and (max-width: 450px), all and (max-height: 500px)"
+    ).matches;
     this._initializeItemsIfNeeded();
-    this._opened = true;
+    this._open = true;
   }
 
   public closeDialog() {
+    this._open = false;
     this._opened = false;
-    this._done = false;
     this._focusSet = false;
     this._filter = "";
     this._search = "";
     fireEvent(this, "dialog-closed", { dialog: this.localName });
   }
 
+  protected willUpdate() {
+    if (!this.hasUpdated) {
+      loadVirtualizer();
+    }
+  }
+
+  private _getItems = memoizeOne(
+    (commandMode: boolean, commandItems, entityItems, filter: string) => {
+      const items = commandMode ? commandItems : entityItems;
+
+      if (items && filter && filter !== " ") {
+        return this._filterItems(items, filter);
+      }
+      return items;
+    }
+  );
+
   protected render() {
-    if (!this._opened) {
-      return html``;
+    if (!this._open) {
+      return nothing;
     }
 
-    let items: QuickBarItem[] | undefined = this._commandMode
-      ? this._commandItems
-      : this._entityItems;
-
-    if (items && this._filter && this._filter !== " ") {
-      items = this._filterItems(items || [], this._filter);
-    }
+    const items: QuickBarItem[] | undefined = this._getItems(
+      this._commandMode,
+      this._commandItems,
+      this._entityItems,
+      this._filter
+    );
 
     return html`
       <ha-dialog
-        .heading=${true}
+        .heading=${this.hass.localize("ui.dialogs.quick-bar.title")}
         open
         @opened=${this._handleOpened}
         @closed=${this.closeDialog}
         hideActions
       >
-        <paper-input
-          dialogInitialFocus
-          no-label-float
-          slot="heading"
-          class="heading"
-          @value-changed=${this._handleSearchChange}
-          .label=${this.hass.localize(
-            "ui.dialogs.quick-bar.filter_placeholder"
-          )}
-          .value=${this._commandMode ? `>${this._search}` : this._search}
-          @keydown=${this._handleInputKeyDown}
-          @focus=${this._setFocusFirstListItem}
-        >
-          ${this._commandMode
-            ? html`<ha-svg-icon
-                slot="prefix"
-                class="prefix"
-                .path=${mdiConsoleLine}
-              ></ha-svg-icon>`
-            : html`<ha-svg-icon
-                slot="prefix"
-                class="prefix"
-                .path=${mdiMagnify}
-              ></ha-svg-icon>`}
-          ${this._search &&
-          html`
-            <mwc-icon-button
-              slot="suffix"
-              @click=${this._clearSearch}
-              title="Clear"
-            >
-              <ha-svg-icon .path=${mdiClose}></ha-svg-icon>
-            </mwc-icon-button>
-          `}
-        </paper-input>
+        <div slot="heading" class="heading">
+          <ha-textfield
+            dialogInitialFocus
+            .placeholder=${this.hass.localize(
+              "ui.dialogs.quick-bar.filter_placeholder"
+            )}
+            aria-label=${this.hass.localize(
+              "ui.dialogs.quick-bar.filter_placeholder"
+            )}
+            .value=${this._commandMode ? `>${this._search}` : this._search}
+            icon
+            .iconTrailing=${this._search !== undefined || this._narrow}
+            @input=${this._handleSearchChange}
+            @keydown=${this._handleInputKeyDown}
+            @focus=${this._setFocusFirstListItem}
+          >
+            ${this._commandMode
+              ? html`
+                  <ha-svg-icon
+                    slot="leadingIcon"
+                    class="prefix"
+                    .path=${mdiConsoleLine}
+                  ></ha-svg-icon>
+                `
+              : html`
+                  <ha-svg-icon
+                    slot="leadingIcon"
+                    class="prefix"
+                    .path=${mdiMagnify}
+                  ></ha-svg-icon>
+                `}
+            ${this._search || this._narrow
+              ? html`
+                  <div slot="trailingIcon">
+                    ${this._search &&
+                    html`<ha-icon-button
+                      @click=${this._clearSearch}
+                      .label=${this.hass!.localize("ui.common.clear")}
+                      .path=${mdiClose}
+                    ></ha-icon-button>`}
+                    ${this._narrow
+                      ? html`
+                          <mwc-button
+                            .label=${this.hass!.localize("ui.common.close")}
+                            @click=${this.closeDialog}
+                          ></mwc-button>
+                        `
+                      : ""}
+                  </div>
+                `
+              : ""}
+          </ha-textfield>
+        </div>
         ${!items
           ? html`<ha-circular-progress
               size="small"
               active
             ></ha-circular-progress>`
-          : html`<mwc-list
-              @rangechange=${this._handleRangeChanged}
-              @keydown=${this._handleListItemKeyDown}
-              @selected=${this._handleSelected}
-              style=${styleMap({
-                height: `${Math.min(
-                  items.length * (this._commandMode ? 56 : 72) + 26,
-                  this._done ? 500 : 0
-                )}px`,
-              })}
-            >
-              ${scroll({
-                items,
-                layout: Layout1d,
-                renderItem: (item: QuickBarItem, index) =>
-                  this._renderItem(item, index),
-              })}
-            </mwc-list>`}
+          : items.length === 0
+          ? html`
+              <div class="nothing-found">
+                ${this.hass.localize("ui.dialogs.quick-bar.nothing_found")}
+              </div>
+            `
+          : html`
+              <mwc-list>
+                ${this._opened
+                  ? html`<lit-virtualizer
+                      scroller
+                      @keydown=${this._handleListItemKeyDown}
+                      @rangechange=${this._handleRangeChanged}
+                      @click=${this._handleItemClick}
+                      class="ha-scrollbar"
+                      style=${styleMap({
+                        height: this._narrow
+                          ? "calc(100vh - 56px)"
+                          : `${Math.min(
+                              items.length * (this._commandMode ? 56 : 72) + 26,
+                              500
+                            )}px`,
+                      })}
+                      .items=${items}
+                      .renderItem=${this._renderItem}
+                    >
+                    </lit-virtualizer>`
+                  : ""}
+              </mwc-list>
+            `}
+        ${this._hint
+          ? html`<ha-tip .hass=${this.hass}>${this._hint}</ha-tip>`
+          : ""}
       </ha-dialog>
     `;
   }
 
-  private _initializeItemsIfNeeded() {
+  private async _initializeItemsIfNeeded() {
     if (this._commandMode) {
-      this._commandItems = this._commandItems || this._generateCommandItems();
+      this._commandItems =
+        this._commandItems || (await this._generateCommandItems());
     } else {
       this._entityItems = this._entityItems || this._generateEntityItems();
     }
   }
 
   private _handleOpened() {
-    this.updateComplete.then(() => {
-      this._done = true;
-    });
+    this._opened = true;
   }
 
   private async _handleRangeChanged(e) {
@@ -221,18 +278,18 @@ export class QuickBar extends LitElement {
     }
   }
 
-  private _renderItem(item: QuickBarItem, index?: number) {
+  private _renderItem = (item: QuickBarItem, index: number) => {
     if (!item) {
-      return html``;
+      return nothing;
     }
     return isCommandItem(item)
       ? this._renderCommandItem(item, index)
       : this._renderEntityItem(item as EntityItem, index);
-  }
+  };
 
   private _renderEntityItem(item: EntityItem, index?: number) {
     return html`
-      <mwc-list-item
+      <ha-list-item
         .twoline=${Boolean(item.altText)}
         .item=${item}
         index=${ifDefined(index)}
@@ -256,14 +313,14 @@ export class QuickBar extends LitElement {
                 >${item.altText}</span
               >
             `
-          : null}
-      </mwc-list-item>
+          : nothing}
+      </ha-list-item>
     `;
   }
 
   private _renderCommandItem(item: CommandItem, index?: number) {
     return html`
-      <mwc-list-item
+      <ha-list-item
         .item=${item}
         index=${ifDefined(index)}
         class="command-item"
@@ -271,7 +328,7 @@ export class QuickBar extends LitElement {
       >
         <span>
           <ha-chip
-            .label="${item.categoryText}"
+            .label=${item.categoryText}
             hasIcon
             class="command-category ${item.categoryKey}"
           >
@@ -286,7 +343,7 @@ export class QuickBar extends LitElement {
         </span>
 
         <span class="command-text">${item.primaryText}</span>
-      </mwc-list-item>
+      </ha-list-item>
     `;
   }
 
@@ -295,12 +352,6 @@ export class QuickBar extends LitElement {
 
     await item.action();
     this.closeDialog();
-  }
-
-  private _handleSelected(ev: SingleSelectedEvent) {
-    const index = ev.detail.index;
-    const item = ((ev.target as List).items[index] as any).item;
-    this.processItemAndCloseDialog(item, index);
   }
 
   private _handleInputKeyDown(ev: KeyboardEvent) {
@@ -313,12 +364,13 @@ export class QuickBar extends LitElement {
     } else if (ev.code === "ArrowDown") {
       ev.preventDefault();
       this._getItemAtIndex(0)?.focus();
-      this._getItemAtIndex(1)?.focus();
+      this._focusSet = true;
+      this._focusListElement = this._getItemAtIndex(0);
     }
   }
 
   private _getItemAtIndex(index: number): ListItem | null {
-    return this.renderRoot.querySelector(`mwc-list-item[index="${index}"]`);
+    return this.renderRoot.querySelector(`ha-list-item[index="${index}"]`);
   }
 
   private _addSpinnerToCommandItem(index: number): void {
@@ -330,15 +382,29 @@ export class QuickBar extends LitElement {
   }
 
   private _handleSearchChange(ev: CustomEvent): void {
-    const newFilter = ev.detail.value;
+    const newFilter = (ev.currentTarget as any).value;
     const oldCommandMode = this._commandMode;
+    const oldSearch = this._search;
+    let newCommandMode: boolean;
+    let newSearch: string;
 
     if (newFilter.startsWith(">")) {
-      this._commandMode = true;
-      this._search = newFilter.substring(1);
+      newCommandMode = true;
+      newSearch = newFilter.substring(1);
     } else {
-      this._commandMode = false;
-      this._search = newFilter;
+      newCommandMode = false;
+      newSearch = newFilter;
+    }
+
+    if (oldCommandMode === newCommandMode && oldSearch === newSearch) {
+      return;
+    }
+
+    this._commandMode = newCommandMode;
+    this._search = newSearch;
+
+    if (this._hint) {
+      this._hint = undefined;
     }
 
     if (oldCommandMode !== this._commandMode) {
@@ -346,6 +412,11 @@ export class QuickBar extends LitElement {
       this._initializeItemsIfNeeded();
       this._filter = this._search;
     } else {
+      if (this._focusSet && this._focusListElement) {
+        this._focusSet = false;
+        // @ts-ignore
+        this._focusListElement.rippleHandlers.endFocus();
+      }
       this._debouncedSetFilter(this._search);
     }
   }
@@ -362,30 +433,55 @@ export class QuickBar extends LitElement {
   private _setFocusFirstListItem() {
     // @ts-ignore
     this._getItemAtIndex(0)?.rippleHandlers.startFocus();
+    this._focusListElement = this._getItemAtIndex(0);
   }
 
   private _handleListItemKeyDown(ev: KeyboardEvent) {
     const isSingleCharacter = ev.key.length === 1;
-    const isFirstListItem =
-      (ev.target as HTMLElement).getAttribute("index") === "0";
+    const index = (ev.target as HTMLElement).getAttribute("index");
+    const isFirstListItem = index === "0";
+    this._focusListElement = ev.target as ListItem;
+    if (ev.key === "ArrowDown") {
+      this._getItemAtIndex(Number(index) + 1)?.focus();
+    }
     if (ev.key === "ArrowUp") {
       if (isFirstListItem) {
         this._filterInputField?.focus();
+      } else {
+        this._getItemAtIndex(Number(index) - 1)?.focus();
       }
     }
+    if (ev.key === "Enter" || ev.key === " ") {
+      this.processItemAndCloseDialog(
+        (ev.target as any).item,
+        Number((ev.target as HTMLElement).getAttribute("index"))
+      );
+    }
     if (ev.key === "Backspace" || isSingleCharacter) {
-      (ev.currentTarget as List).scrollTop = 0;
+      (ev.currentTarget as HTMLElement).scrollTop = 0;
       this._filterInputField?.focus();
     }
+  }
+
+  private _handleItemClick(ev) {
+    const listItem = ev.target.closest("ha-list-item");
+    this.processItemAndCloseDialog(
+      listItem.item,
+      Number(listItem.getAttribute("index"))
+    );
   }
 
   private _generateEntityItems(): EntityItem[] {
     return Object.keys(this.hass.states)
       .map((entityId) => {
+        const entityState = this.hass.states[entityId];
         const entityItem = {
-          primaryText: computeStateName(this.hass.states[entityId]),
+          primaryText: computeStateName(entityState),
           altText: entityId,
-          icon: domainIcon(computeDomain(entityId), this.hass.states[entityId]),
+          icon: entityState.attributes.icon,
+          iconPath: entityState.attributes.icon
+            ? undefined
+            : domainIcon(computeDomain(entityId), entityState),
           action: () => fireEvent(this, "hass-more-info", { entityId }),
         };
 
@@ -395,54 +491,93 @@ export class QuickBar extends LitElement {
         };
       })
       .sort((a, b) =>
-        compare(a.primaryText.toLowerCase(), b.primaryText.toLowerCase())
+        caseInsensitiveStringCompare(
+          a.primaryText,
+          b.primaryText,
+          this.hass.locale.language
+        )
       );
   }
 
-  private _generateCommandItems(): CommandItem[] {
+  private async _generateCommandItems(): Promise<CommandItem[]> {
     return [
       ...this._generateReloadCommands(),
       ...this._generateServerControlCommands(),
-      ...this._generateNavigationCommands(),
+      ...(await this._generateNavigationCommands()),
     ].sort((a, b) =>
-      compare(
-        a.strings.join(" ").toLowerCase(),
-        b.strings.join(" ").toLowerCase()
+      caseInsensitiveStringCompare(
+        a.strings.join(" "),
+        b.strings.join(" "),
+        this.hass.locale.language
       )
     );
   }
 
   private _generateReloadCommands(): CommandItem[] {
-    const reloadableDomains = componentsWithService(this.hass, "reload").sort();
+    // Get all domains that have a direct "reload" service
+    const reloadableDomains = componentsWithService(this.hass, "reload");
 
-    return reloadableDomains.map((domain) => {
-      const commandItem = {
-        primaryText:
-          this.hass.localize(
-            `ui.dialogs.quick-bar.commands.reload.${domain}`
-          ) ||
-          this.hass.localize(
-            "ui.dialogs.quick-bar.commands.reload.reload",
-            "domain",
-            domainToName(this.hass.localize, domain)
-          ),
-        action: () => this.hass.callService(domain, "reload"),
-        iconPath: mdiReload,
-        categoryText: this.hass.localize(
-          `ui.dialogs.quick-bar.commands.types.reload`
+    const commands = reloadableDomains.map((domain) => ({
+      primaryText:
+        this.hass.localize(`ui.dialogs.quick-bar.commands.reload.${domain}`) ||
+        this.hass.localize(
+          "ui.dialogs.quick-bar.commands.reload.reload",
+          "domain",
+          domainToName(this.hass.localize, domain)
         ),
-      };
+      action: () => this.hass.callService(domain, "reload"),
+      iconPath: mdiReload,
+      categoryText: this.hass.localize(
+        `ui.dialogs.quick-bar.commands.types.reload`
+      ),
+    }));
 
-      return {
-        ...commandItem,
-        categoryKey: "reload",
-        strings: [`${commandItem.categoryText} ${commandItem.primaryText}`],
-      };
+    // Add "frontend.reload_themes"
+    commands.push({
+      primaryText: this.hass.localize(
+        "ui.dialogs.quick-bar.commands.reload.themes"
+      ),
+      action: () => this.hass.callService("frontend", "reload_themes"),
+      iconPath: mdiReload,
+      categoryText: this.hass.localize(
+        "ui.dialogs.quick-bar.commands.types.reload"
+      ),
     });
+
+    // Add "homeassistant.reload_core_config"
+    commands.push({
+      primaryText: this.hass.localize(
+        "ui.dialogs.quick-bar.commands.reload.core"
+      ),
+      action: () =>
+        this.hass.callService("homeassistant", "reload_core_config"),
+      iconPath: mdiReload,
+      categoryText: this.hass.localize(
+        "ui.dialogs.quick-bar.commands.types.reload"
+      ),
+    });
+
+    // Add "homeassistant.reload_all"
+    commands.push({
+      primaryText: this.hass.localize(
+        "ui.dialogs.quick-bar.commands.reload.all"
+      ),
+      action: () => this.hass.callService("homeassistant", "reload_all"),
+      iconPath: mdiReload,
+      categoryText: this.hass.localize(
+        "ui.dialogs.quick-bar.commands.types.reload"
+      ),
+    });
+
+    return commands.map((command) => ({
+      ...command,
+      categoryKey: "reload",
+      strings: [`${command.categoryText} ${command.primaryText}`],
+    }));
   }
 
   private _generateServerControlCommands(): CommandItem[] {
-    const serverActions = ["restart", "stop"];
+    const serverActions = ["restart", "stop"] as const;
 
     return serverActions.map((action) => {
       const categoryKey: CommandItem["categoryKey"] = "server_control";
@@ -473,11 +608,40 @@ export class QuickBar extends LitElement {
     });
   }
 
-  private _generateNavigationCommands(): CommandItem[] {
+  private async _generateNavigationCommands(): Promise<CommandItem[]> {
     const panelItems = this._generateNavigationPanelCommands();
     const sectionItems = this._generateNavigationConfigSectionCommands();
+    const supervisorItems: BaseNavigationCommand[] = [];
+    if (isComponentLoaded(this.hass, "hassio")) {
+      const addonsInfo = await fetchHassioAddonsInfo(this.hass);
+      supervisorItems.push({
+        path: "/hassio/store",
+        primaryText: this.hass.localize(
+          "ui.dialogs.quick-bar.commands.navigation.addon_store"
+        ),
+      });
+      supervisorItems.push({
+        path: "/hassio/dashboard",
+        primaryText: this.hass.localize(
+          "ui.dialogs.quick-bar.commands.navigation.addon_dashboard"
+        ),
+      });
+      for (const addon of addonsInfo.addons.filter((a) => a.version)) {
+        supervisorItems.push({
+          path: `/hassio/addon/${addon.slug}`,
+          primaryText: this.hass.localize(
+            "ui.dialogs.quick-bar.commands.navigation.addon_info",
+            { addon: addon.name }
+          ),
+        });
+      }
+    }
 
-    return this._finalizeNavigationCommands([...panelItems, ...sectionItems]);
+    return this._finalizeNavigationCommands([
+      ...panelItems,
+      ...sectionItems,
+      ...supervisorItems,
+    ]);
   }
 
   private _generateNavigationPanelCommands(): BaseNavigationCommand[] {
@@ -502,15 +666,21 @@ export class QuickBar extends LitElement {
 
     for (const sectionKey of Object.keys(configSections)) {
       for (const page of configSections[sectionKey]) {
-        if (canShowPage(this.hass, page)) {
-          if (page.component) {
-            const info = this._getNavigationInfoFromConfig(page);
-
-            if (info) {
-              items.push(info);
-            }
-          }
+        if (!canShowPage(this.hass, page)) {
+          continue;
         }
+
+        const info = this._getNavigationInfoFromConfig(page);
+
+        if (!info) {
+          continue;
+        }
+        // Add to list, but only if we do not already have an entry for the same path and component
+        if (items.some((e) => e.path === info.path)) {
+          continue;
+        }
+
+        items.push(info);
       }
     }
 
@@ -520,14 +690,21 @@ export class QuickBar extends LitElement {
   private _getNavigationInfoFromConfig(
     page: PageNavigation
   ): NavigationInfo | undefined {
-    if (page.component) {
-      const caption = this.hass.localize(
-        `ui.dialogs.quick-bar.commands.navigation.${page.component}`
-      );
+    const path = page.path.substring(1);
 
-      if (page.translationKey && caption) {
-        return { ...page, primaryText: caption };
-      }
+    let name = path.substring(path.indexOf("/") + 1);
+    name = name.indexOf("/") > -1 ? name.substring(0, name.indexOf("/")) : name;
+
+    const caption =
+      (name &&
+        this.hass.localize(
+          `ui.dialogs.quick-bar.commands.navigation.${name}`
+        )) ||
+      // @ts-expect-error
+      (page.translationKey && this.hass.localize(page.translationKey));
+
+    if (caption) {
+      return { ...page, primaryText: caption };
     }
 
     return undefined;
@@ -581,14 +758,24 @@ export class QuickBar extends LitElement {
 
   static get styles() {
     return [
+      haStyleScrollbar,
       haStyleDialog,
       css`
+        mwc-list {
+          --mdc-list-vertical-padding: 0;
+        }
         .heading {
-          padding: 8px 20px 0px;
+          display: flex;
+          align-items: center;
+          --mdc-theme-primary: var(--primary-text-color);
+        }
+
+        .heading ha-textfield {
+          flex-grow: 1;
         }
 
         ha-dialog {
-          --dialog-z-index: 8;
+          --dialog-z-index: 9;
           --dialog-content-padding: 0;
         }
 
@@ -602,17 +789,23 @@ export class QuickBar extends LitElement {
           }
         }
 
-        ha-icon.entity,
-        ha-svg-icon.entity {
-          margin-left: 20px;
+        @media all and (max-width: 450px), all and (max-height: 500px) {
+          ha-textfield {
+            --mdc-shape-small: 0;
+          }
+        }
+
+        @media all and (max-width: 450px), all and (max-height: 690px) {
+          .hint {
+            display: none;
+          }
         }
 
         ha-svg-icon.prefix {
-          margin: 8px;
           color: var(--primary-text-color);
         }
 
-        paper-input mwc-icon-button {
+        ha-textfield ha-icon-button {
           --mdc-icon-button-size: 24px;
           color: var(--primary-text-color);
         }
@@ -636,14 +829,36 @@ export class QuickBar extends LitElement {
 
         span.command-text {
           margin-left: 8px;
+          margin-inline-start: 8px;
+          margin-inline-end: initial;
+          direction: var(--direction);
         }
 
-        mwc-list-item {
+        ha-list-item {
           width: 100%;
+          --mdc-list-item-graphic-margin: 20px;
         }
 
-        mwc-list-item.command-item {
+        ha-list-item.command-item {
           text-transform: capitalize;
+        }
+
+        ha-tip {
+          padding: 20px;
+        }
+
+        .nothing-found {
+          padding: 16px 0px;
+          text-align: center;
+        }
+
+        div[slot="trailingIcon"] {
+          display: flex;
+          align-items: center;
+        }
+
+        lit-virtualizer {
+          contain: size layout !important;
         }
       `,
     ];

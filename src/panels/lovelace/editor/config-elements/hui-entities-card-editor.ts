@@ -1,14 +1,13 @@
-import "@polymer/paper-dropdown-menu/paper-dropdown-menu";
-import "@polymer/paper-input/paper-input";
-import "@polymer/paper-item/paper-item";
-import "@polymer/paper-listbox/paper-listbox";
-import { css, CSSResultGroup, html, LitElement, TemplateResult } from "lit";
+import { css, CSSResultGroup, html, LitElement, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators";
 import {
   any,
   array,
   assert,
+  assign,
   boolean,
+  dynamic,
+  enums,
   literal,
   number,
   object,
@@ -19,16 +18,18 @@ import {
 } from "superstruct";
 import { fireEvent, HASSDomEvent } from "../../../../common/dom/fire_event";
 import { customType } from "../../../../common/structs/is-custom-type";
-import { entityId } from "../../../../common/structs/is-entity-id";
 import { computeRTLDirection } from "../../../../common/util/compute_rtl";
 import "../../../../components/entity/state-badge";
 import "../../../../components/ha-card";
 import "../../../../components/ha-formfield";
 import "../../../../components/ha-icon";
 import "../../../../components/ha-switch";
+import "../../../../components/ha-textfield";
+import "../../../../components/ha-theme-picker";
+import { isCustomType } from "../../../../data/lovelace_custom_cards";
 import type { HomeAssistant } from "../../../../types";
 import type { EntitiesCardConfig } from "../../cards/types";
-import "../../components/hui-theme-select-editor";
+import { TIMESTAMP_RENDERING_FORMATS } from "../../components/types";
 import type { LovelaceRowConfig } from "../../entity-rows/types";
 import { headerFooterConfigStructs } from "../../header-footer/structs";
 import type { LovelaceCardEditor } from "../../types";
@@ -37,6 +38,8 @@ import "../hui-entities-card-row-editor";
 import "../hui-sub-element-editor";
 import { processEditorEntities } from "../process-editor-entities";
 import { actionConfigStruct } from "../structs/action-struct";
+import { baseLovelaceCardConfig } from "../structs/base-card-struct";
+import { buttonEntityConfigStruct } from "../structs/button-entity-struct";
 import { entitiesConfigStruct } from "../structs/entities-struct";
 import {
   EditorTarget,
@@ -47,7 +50,9 @@ import { configElementStyle } from "./config-elements-style";
 
 const buttonEntitiesRowConfigStruct = object({
   type: literal("button"),
-  name: string(),
+  entity: optional(string()),
+  name: optional(string()),
+  icon: optional(string()),
   action_name: optional(string()),
   tap_action: actionConfigStruct,
   hold_action: optional(actionConfigStruct),
@@ -56,7 +61,7 @@ const buttonEntitiesRowConfigStruct = object({
 
 const castEntitiesRowConfigStruct = object({
   type: literal("cast"),
-  view: union([string(), number()]),
+  view: optional(union([string(), number()])),
   dashboard: optional(string()),
   name: optional(string()),
   icon: optional(string()),
@@ -69,7 +74,9 @@ const callServiceEntitiesRowConfigStruct = object({
   service: string(),
   icon: optional(string()),
   action_name: optional(string()),
+  // "service_data" is kept for backwards compatibility. Replaced by "data".
   service_data: optional(any()),
+  data: optional(any()),
 });
 
 const conditionalEntitiesRowConfigStruct = object({
@@ -103,17 +110,7 @@ const webLinkEntitiesRowConfigStruct = object({
 
 const buttonsEntitiesRowConfigStruct = object({
   type: literal("buttons"),
-  entities: array(
-    union([
-      object({
-        entity: string(),
-        icon: optional(string()),
-        image: optional(string()),
-        name: optional(string()),
-      }),
-      string(),
-    ])
-  ),
+  entities: array(buttonEntityConfigStruct),
 });
 
 const attributeEntitiesRowConfigStruct = object({
@@ -123,6 +120,8 @@ const attributeEntitiesRowConfigStruct = object({
   prefix: optional(string()),
   suffix: optional(string()),
   name: optional(string()),
+  icon: optional(string()),
+  format: optional(enums(TIMESTAMP_RENDERING_FORMATS)),
 });
 
 const textEntitiesRowConfigStruct = object({
@@ -132,42 +131,74 @@ const textEntitiesRowConfigStruct = object({
   icon: optional(string()),
 });
 
-const customRowConfigStruct = type({
+const customEntitiesRowConfigStruct = type({
   type: customType(),
 });
 
-const entitiesRowConfigStruct = union([
-  entitiesConfigStruct,
-  buttonEntitiesRowConfigStruct,
-  castEntitiesRowConfigStruct,
-  conditionalEntitiesRowConfigStruct,
-  dividerEntitiesRowConfigStruct,
-  sectionEntitiesRowConfigStruct,
-  webLinkEntitiesRowConfigStruct,
-  buttonsEntitiesRowConfigStruct,
-  attributeEntitiesRowConfigStruct,
-  callServiceEntitiesRowConfigStruct,
-  textEntitiesRowConfigStruct,
-  customRowConfigStruct,
-]);
+const entitiesRowConfigStruct = dynamic<any>((value) => {
+  if (value && typeof value === "object" && "type" in value) {
+    if (isCustomType((value as LovelaceRowConfig).type!)) {
+      return customEntitiesRowConfigStruct;
+    }
 
-const cardConfigStruct = object({
-  type: string(),
-  title: optional(union([string(), boolean()])),
-  entity: optional(entityId()),
-  theme: optional(string()),
-  icon: optional(string()),
-  show_header_toggle: optional(boolean()),
-  state_color: optional(boolean()),
-  entities: array(entitiesRowConfigStruct),
-  header: optional(headerFooterConfigStructs),
-  footer: optional(headerFooterConfigStructs),
+    switch ((value as LovelaceRowConfig).type!) {
+      case "attribute": {
+        return attributeEntitiesRowConfigStruct;
+      }
+      case "button": {
+        return buttonEntitiesRowConfigStruct;
+      }
+      case "buttons": {
+        return buttonsEntitiesRowConfigStruct;
+      }
+      case "call-service": {
+        return callServiceEntitiesRowConfigStruct;
+      }
+      case "cast": {
+        return castEntitiesRowConfigStruct;
+      }
+      case "conditional": {
+        return conditionalEntitiesRowConfigStruct;
+      }
+      case "divider": {
+        return dividerEntitiesRowConfigStruct;
+      }
+      case "section": {
+        return sectionEntitiesRowConfigStruct;
+      }
+      case "text": {
+        return textEntitiesRowConfigStruct;
+      }
+      case "weblink": {
+        return webLinkEntitiesRowConfigStruct;
+      }
+    }
+  }
+
+  // No "type" property => has to be the default entity row config struct
+  return entitiesConfigStruct;
 });
+
+const cardConfigStruct = assign(
+  baseLovelaceCardConfig,
+  object({
+    title: optional(union([string(), boolean()])),
+    entity: optional(string()),
+    theme: optional(string()),
+    icon: optional(string()),
+    show_header_toggle: optional(boolean()),
+    state_color: optional(boolean()),
+    entities: array(entitiesRowConfigStruct),
+    header: optional(headerFooterConfigStructs),
+    footer: optional(headerFooterConfigStructs),
+  })
+);
 
 @customElement("hui-entities-card-editor")
 export class HuiEntitiesCardEditor
   extends LitElement
-  implements LovelaceCardEditor {
+  implements LovelaceCardEditor
+{
   @property({ attribute: false }) public hass?: HomeAssistant;
 
   @state() private _config?: EntitiesCardConfig;
@@ -190,9 +221,9 @@ export class HuiEntitiesCardEditor
     return this._config!.theme || "";
   }
 
-  protected render(): TemplateResult {
+  protected render() {
     if (!this.hass || !this._config) {
-      return html``;
+      return nothing;
     }
 
     if (this._subElementEditorConfig) {
@@ -209,7 +240,7 @@ export class HuiEntitiesCardEditor
 
     return html`
       <div class="card-config">
-        <paper-input
+        <ha-textfield
           .label="${this.hass.localize(
             "ui.panel.lovelace.editor.card.generic.title"
           )} (${this.hass.localize(
@@ -217,14 +248,19 @@ export class HuiEntitiesCardEditor
           )})"
           .value=${this._title}
           .configValue=${"title"}
-          @value-changed=${this._valueChanged}
-        ></paper-input>
-        <hui-theme-select-editor
+          @input=${this._valueChanged}
+        ></ha-textfield>
+        <ha-theme-picker
           .hass=${this.hass}
           .value=${this._theme}
+          .label=${`${this.hass!.localize(
+            "ui.panel.lovelace.editor.card.generic.theme"
+          )} (${this.hass!.localize(
+            "ui.panel.lovelace.editor.card.config.optional"
+          )})`}
           .configValue=${"theme"}
           @value-changed=${this._valueChanged}
-        ></hui-theme-select-editor>
+        ></ha-theme-picker>
         <div class="side-by-side">
           <ha-formfield
             .label=${this.hass.localize(
@@ -388,6 +424,11 @@ export class HuiEntitiesCardEditor
 
         hui-header-footer-editor {
           padding-top: 4px;
+        }
+
+        ha-textfield {
+          display: block;
+          margin-bottom: 16px;
         }
       `,
     ];

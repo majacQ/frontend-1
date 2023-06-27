@@ -3,6 +3,7 @@ import { html } from "@polymer/polymer/lib/utils/html-tag";
 /* eslint-plugin-disable lit */
 import { PolymerElement } from "@polymer/polymer/polymer-element";
 import { EventsMixin } from "../mixins/events-mixin";
+import "./ha-icon";
 import "./ha-icon-button";
 
 /*
@@ -25,6 +26,7 @@ class HaWaterHeaterControl extends EventsMixin(PolymerElement) {
         #target_temperature {
           @apply --layout-self-center;
           font-size: 200%;
+          direction: ltr;
         }
         .control-buttons {
           font-size: 200%;
@@ -40,16 +42,14 @@ class HaWaterHeaterControl extends EventsMixin(PolymerElement) {
       <div id="target_temperature">[[value]] [[units]]</div>
       <div class="control-buttons">
         <div>
-          <ha-icon-button
-            icon="hass:chevron-up"
-            on-click="incrementValue"
-          ></ha-icon-button>
+          <ha-icon-button on-click="incrementValue">
+            <ha-icon icon="hass:chevron-up"></ha-icon>
+          </ha-icon-button>
         </div>
         <div>
-          <ha-icon-button
-            icon="hass:chevron-down"
-            on-click="decrementValue"
-          ></ha-icon-button>
+          <ha-icon-button on-click="decrementValue">
+            <ha-icon icon="hass:chevron-down"></ha-icon>
+          </ha-icon-button>
         </div>
       </div>
     `;

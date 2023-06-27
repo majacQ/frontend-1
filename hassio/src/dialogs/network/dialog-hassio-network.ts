@@ -1,23 +1,22 @@
 import "@material/mwc-button/mwc-button";
-import "@material/mwc-icon-button";
 import "@material/mwc-list/mwc-list";
 import "@material/mwc-list/mwc-list-item";
 import "@material/mwc-tab";
 import "@material/mwc-tab-bar";
 import { mdiClose } from "@mdi/js";
 import { PaperInputElement } from "@polymer/paper-input/paper-input";
-import { css, CSSResultGroup, html, LitElement, TemplateResult } from "lit";
+import { css, CSSResultGroup, html, LitElement, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators";
 import { cache } from "lit/directives/cache";
 import { fireEvent } from "../../../../src/common/dom/fire_event";
+import "../../../../src/components/ha-alert";
 import "../../../../src/components/ha-circular-progress";
 import "../../../../src/components/ha-dialog";
 import "../../../../src/components/ha-expansion-panel";
 import "../../../../src/components/ha-formfield";
 import "../../../../src/components/ha-header-bar";
+import "../../../../src/components/ha-icon-button";
 import "../../../../src/components/ha-radio";
-import "../../../../src/components/ha-related-items";
-import "../../../../src/components/ha-svg-icon";
 import { extractApiErrorMessage } from "../../../../src/data/hassio/common";
 import {
   AccessPoints,
@@ -41,7 +40,8 @@ const IP_VERSIONS = ["ipv4", "ipv6"];
 @customElement("dialog-hassio-network")
 export class DialogHassioNetwork
   extends LitElement
-  implements HassDialog<HassioNetworkDialogParams> {
+  implements HassDialog<HassioNetworkDialogParams>
+{
   @property({ attribute: false }) public hass!: HomeAssistant;
 
   @property({ attribute: false }) public supervisor!: Supervisor;
@@ -83,9 +83,9 @@ export class DialogHassioNetwork
     fireEvent(this, "dialog-closed", { dialog: this.localName });
   }
 
-  protected render(): TemplateResult {
+  protected render() {
     if (!this._params || !this._interface) {
-      return html``;
+      return nothing;
     }
 
     return html`
@@ -93,7 +93,7 @@ export class DialogHassioNetwork
         open
         scrimClickAction
         escapeKeyAction
-        .heading=${true}
+        .heading=${this.supervisor.localize("dialog.network.title")}
         hideActions
         @closed=${this.closeDialog}
       >
@@ -102,12 +102,15 @@ export class DialogHassioNetwork
             <span slot="title">
               ${this.supervisor.localize("dialog.network.title")}
             </span>
-            <mwc-icon-button slot="actionItems" dialogAction="cancel">
-              <ha-svg-icon .path=${mdiClose}></ha-svg-icon>
-            </mwc-icon-button>
+            <ha-icon-button
+              .label=${this.supervisor.localize("common.close")}
+              .path=${mdiClose}
+              slot="actionItems"
+              dialogAction="cancel"
+            ></ha-icon-button>
           </ha-header-bar>
           ${this._interfaces.length > 1
-            ? html` <mwc-tab-bar
+            ? html`<mwc-tab-bar
                 .activeIndex=${this._curTabIndex}
                 @MDCTabBar:activated=${this._handleTabActivated}
                 >${this._interfaces.map(
@@ -115,6 +118,7 @@ export class DialogHassioNetwork
                     html`<mwc-tab
                       .id=${device.interface}
                       .label=${device.interface}
+                      dialogInitialFocus
                     >
                     </mwc-tab>`
                 )}
@@ -133,7 +137,10 @@ export class DialogHassioNetwork
         )}
         ${this._interface?.type === "wireless"
           ? html`
-              <ha-expansion-panel header="Wi-Fi" outlined>
+              <ha-expansion-panel
+                .header=${this.supervisor.localize("dialog.network.wifi")}
+                outlined
+              >
                 ${this._interface?.wifi?.ssid
                   ? html`<p>
                       ${this.supervisor.localize(
@@ -172,7 +179,11 @@ export class DialogHassioNetwork
                                 >
                                   <span>${ap.ssid}</span>
                                   <span slot="secondary">
-                                    ${ap.mac} - Strength: ${ap.signal}
+                                    ${ap.mac} -
+                                    ${this.supervisor.localize(
+                                      "dialog.network.signal_strength"
+                                    )}:
+                                    ${ap.signal}
                                   </span>
                                 </mwc-list-item>
                               `
@@ -236,7 +247,9 @@ export class DialogHassioNetwork
                               class="flex-auto"
                               type="password"
                               id="psk"
-                              label="Password"
+                              .label=${this.supervisor.localize(
+                                "dialog.network.wifi_password"
+                              )}
                               version="wifi"
                               @value-changed=${this
                                 ._handleInputValueChangedWifi}
@@ -250,9 +263,9 @@ export class DialogHassioNetwork
             `
           : ""}
         ${this._dirty
-          ? html`<div class="warning">
+          ? html`<ha-alert alert-type="warning">
               ${this.supervisor.localize("dialog.network.warning")}
-            </div>`
+            </ha-alert>`
           : ""}
       </div>
       <div class="buttons">
@@ -285,7 +298,7 @@ export class DialogHassioNetwork
         this.hass,
         this._interface.interface
       );
-    } catch (err) {
+    } catch (err: any) {
       showAlertDialog(this, {
         title: "Failed to scan for accesspoints",
         text: extractApiErrorMessage(err),
@@ -303,7 +316,7 @@ export class DialogHassioNetwork
       >
         <div class="radio-row">
           <ha-formfield
-            .label=${this.supervisor.localize("dialog.network.dhcp")}
+            .label=${this.supervisor.localize("dialog.network.auto")}
           >
             <ha-radio
               @change=${this._handleRadioValueChanged}
@@ -311,6 +324,7 @@ export class DialogHassioNetwork
               value="auto"
               name="${version}method"
               .checked=${this._interface![version]?.method === "auto"}
+              dialogInitialFocus
             >
             </ha-radio>
           </ha-formfield>
@@ -446,7 +460,7 @@ export class DialogHassioNetwork
         this._interface!.interface,
         interfaceOptions
       );
-    } catch (err) {
+    } catch (err: any) {
       showAlertDialog(this, {
         title: this.supervisor.localize("dialog.network.failed_to_change"),
         text: extractApiErrorMessage(err),
@@ -492,7 +506,7 @@ export class DialogHassioNetwork
   }
 
   private _handleRadioValueChangedAp(ev: CustomEvent): void {
-    const value = ((ev.target as any).value as string) as
+    const value = (ev.target as any).value as string as
       | "open"
       | "wep"
       | "wpa-psk";
@@ -583,10 +597,6 @@ export class DialogHassioNetwork
           margin-left: 8px;
         }
 
-        :host([rtl]) app-toolbar {
-          direction: rtl;
-          text-align: right;
-        }
         .container {
           padding: 0 8px 4px;
         }

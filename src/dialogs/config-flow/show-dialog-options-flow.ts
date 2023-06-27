@@ -1,5 +1,6 @@
 import { html } from "lit";
 import { ConfigEntry } from "../../data/config_entries";
+import { domainToName, IntegrationManifest } from "../../data/integration";
 import {
   createOptionsFlow,
   deleteOptionsFlow,
@@ -15,12 +16,15 @@ export const loadOptionsFlowDialog = loadDataEntryFlowDialog;
 
 export const showOptionsFlowDialog = (
   element: HTMLElement,
-  configEntry: ConfigEntry
+  configEntry: ConfigEntry,
+  manifest?: IntegrationManifest | null
 ): void =>
   showFlowDialog(
     element,
     {
       startFlowHandler: configEntry.entry_id,
+      domain: configEntry.domain,
+      manifest,
     },
     {
       loadDevicesAndAreas: false,
@@ -28,6 +32,7 @@ export const showOptionsFlowDialog = (
         const [step] = await Promise.all([
           createOptionsFlow(hass, handler),
           hass.loadBackendTranslation("options", configEntry.domain),
+          hass.loadBackendTranslation("selector", configEntry.domain),
         ]);
         return step;
       },
@@ -35,6 +40,7 @@ export const showOptionsFlowDialog = (
         const [step] = await Promise.all([
           fetchOptionsFlow(hass, flowId),
           hass.loadBackendTranslation("options", configEntry.domain),
+          hass.loadBackendTranslation("selector", configEntry.domain),
         ]);
         return step;
       },
@@ -61,7 +67,8 @@ export const showOptionsFlowDialog = (
       renderShowFormStepHeader(hass, step) {
         return (
           hass.localize(
-            `component.${configEntry.domain}.options.step.${step.step_id}.title`
+            `component.${configEntry.domain}.options.step.${step.step_id}.title`,
+            step.description_placeholders
           ) || hass.localize(`ui.dialogs.options_flow.form.header`)
         );
       },
@@ -88,9 +95,37 @@ export const showOptionsFlowDialog = (
         );
       },
 
-      renderShowFormStepFieldError(hass, _step, error) {
+      renderShowFormStepFieldHelper(hass, step, field) {
+        const description = hass.localize(
+          `component.${configEntry.domain}.options.step.${step.step_id}.data_description.${field.name}`,
+          step.description_placeholders
+        );
+        return description
+          ? html`<ha-markdown breaks .content=${description}></ha-markdown>`
+          : "";
+      },
+
+      renderShowFormStepFieldError(hass, step, error) {
         return hass.localize(
-          `component.${configEntry.domain}.options.error.${error}`
+          `component.${configEntry.domain}.options.error.${error}`,
+          step.description_placeholders
+        );
+      },
+
+      renderShowFormStepFieldLocalizeValue(hass, _step, key) {
+        return hass.localize(`component.${configEntry.domain}.selector.${key}`);
+      },
+
+      renderShowFormStepSubmitButton(hass, step) {
+        return (
+          hass.localize(
+            `component.${configEntry.domain}.options.step.${step.step_id}.submit`
+          ) ||
+          hass.localize(
+            `ui.panel.config.integrations.config_flow.${
+              step.last_step === false ? "next" : "submit"
+            }`
+          )
         );
       },
 
@@ -108,12 +143,70 @@ export const showOptionsFlowDialog = (
         `;
       },
 
-      renderShowFormProgressHeader(_hass, _step) {
-        return "";
+      renderShowFormProgressHeader(hass, step) {
+        return (
+          hass.localize(
+            `component.${configEntry.domain}.options.step.${step.step_id}.title`
+          ) || hass.localize(`component.${configEntry.domain}.title`)
+        );
       },
 
-      renderShowFormProgressDescription(_hass, _step) {
-        return "";
+      renderShowFormProgressDescription(hass, step) {
+        const description = hass.localize(
+          `component.${configEntry.domain}.options.progress.${step.progress_action}`,
+          step.description_placeholders
+        );
+        return description
+          ? html`
+              <ha-markdown
+                allowsvg
+                breaks
+                .content=${description}
+              ></ha-markdown>
+            `
+          : "";
+      },
+
+      renderMenuHeader(hass, step) {
+        return (
+          hass.localize(
+            `component.${configEntry.domain}.options.step.${step.step_id}.title`
+          ) || hass.localize(`component.${configEntry.domain}.title`)
+        );
+      },
+
+      renderMenuDescription(hass, step) {
+        const description = hass.localize(
+          `component.${configEntry.domain}.options.step.${step.step_id}.description`,
+          step.description_placeholders
+        );
+        return description
+          ? html`
+              <ha-markdown
+                allowsvg
+                breaks
+                .content=${description}
+              ></ha-markdown>
+            `
+          : "";
+      },
+
+      renderMenuOption(hass, step, option) {
+        return hass.localize(
+          `component.${configEntry.domain}.options.step.${step.step_id}.menu_options.${option}`,
+          step.description_placeholders
+        );
+      },
+
+      renderLoadingDescription(hass, reason) {
+        return (
+          hass.localize(`component.${configEntry.domain}.options.loading`) ||
+          (reason === "loading_flow" || reason === "loading_step"
+            ? hass.localize(`ui.dialogs.options_flow.loading.${reason}`, {
+                integration: domainToName(hass.localize, configEntry.domain),
+              })
+            : "")
+        );
       },
     }
   );

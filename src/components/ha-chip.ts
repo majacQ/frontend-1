@@ -1,43 +1,35 @@
 // @ts-ignore
 import chipStyles from "@material/chips/dist/mdc.chips.min.css";
-import {
-  css,
-  CSSResultGroup,
-  html,
-  LitElement,
-  TemplateResult,
-  unsafeCSS,
-} from "lit";
+import { css, CSSResultGroup, html, LitElement, nothing, unsafeCSS } from "lit";
 import { customElement, property } from "lit/decorators";
-import "./ha-icon";
-
-declare global {
-  // for fire event
-  interface HASSDomEvents {
-    "chip-clicked": { index: string };
-  }
-}
 
 @customElement("ha-chip")
 export class HaChip extends LitElement {
-  @property() public index = 0;
-
   @property({ type: Boolean }) public hasIcon = false;
 
-  protected render(): TemplateResult {
+  @property({ type: Boolean }) public hasTrailingIcon = false;
+
+  @property({ type: Boolean }) public noText = false;
+
+  protected render() {
     return html`
-      <div class="mdc-chip" .index=${this.index}>
+      <div class="mdc-chip ${this.noText ? "no-text" : ""}">
         ${this.hasIcon
           ? html`<div class="mdc-chip__icon mdc-chip__icon--leading">
               <slot name="icon"></slot>
             </div>`
-          : null}
+          : nothing}
         <div class="mdc-chip__ripple"></div>
         <span role="gridcell">
           <span role="button" tabindex="0" class="mdc-chip__primary-action">
             <span class="mdc-chip__text"><slot></slot></span>
           </span>
         </span>
+        ${this.hasTrailingIcon
+          ? html`<div class="mdc-chip__icon mdc-chip__icon--trailing">
+              <slot name="trailing-icon"></slot>
+            </div>`
+          : nothing}
       </div>
     `;
   }
@@ -53,13 +45,34 @@ export class HaChip extends LitElement {
         color: var(--ha-chip-text-color, var(--primary-text-color));
       }
 
+      .mdc-chip.no-text {
+        padding: 0 10px;
+      }
+
       .mdc-chip:hover {
         color: var(--ha-chip-text-color, var(--primary-text-color));
       }
 
-      .mdc-chip__icon--leading {
-        --mdc-icon-size: 20px;
+      .mdc-chip__icon--leading,
+      .mdc-chip__icon--trailing {
+        --mdc-icon-size: 18px;
+        line-height: 14px;
         color: var(--ha-chip-icon-color, var(--ha-chip-text-color));
+      }
+      .mdc-chip.mdc-chip--selected .mdc-chip__checkmark,
+      .mdc-chip .mdc-chip__icon--leading:not(.mdc-chip__icon--leading-hidden) {
+        margin-right: -4px;
+        margin-inline-start: -4px;
+        margin-inline-end: 4px;
+        direction: var(--direction);
+      }
+
+      span[role="gridcell"] {
+        line-height: 14px;
+      }
+
+      :host {
+        outline: none;
       }
     `;
   }

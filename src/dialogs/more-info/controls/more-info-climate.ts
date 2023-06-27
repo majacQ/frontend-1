@@ -1,32 +1,30 @@
-import "@polymer/iron-flex-layout/iron-flex-layout-classes";
-import "@polymer/paper-item/paper-item";
-import "@polymer/paper-listbox/paper-listbox";
+import "@material/mwc-list/mwc-list-item";
 import {
   css,
   CSSResultGroup,
   html,
   LitElement,
   PropertyValues,
-  TemplateResult,
+  nothing,
 } from "lit";
 import { property } from "lit/decorators";
 import { classMap } from "lit/directives/class-map";
 import { fireEvent } from "../../../common/dom/fire_event";
+import { stopPropagation } from "../../../common/dom/stop_propagation";
+import {
+  computeAttributeNameDisplay,
+  computeAttributeValueDisplay,
+} from "../../../common/entity/compute_attribute_display";
+import { computeStateDisplay } from "../../../common/entity/compute_state_display";
 import { supportsFeature } from "../../../common/entity/supports-feature";
 import { computeRTLDirection } from "../../../common/util/compute_rtl";
 import "../../../components/ha-climate-control";
-import "../../../components/ha-paper-dropdown-menu";
+import "../../../components/ha-select";
 import "../../../components/ha-slider";
 import "../../../components/ha-switch";
 import {
   ClimateEntity,
-  CLIMATE_SUPPORT_AUX_HEAT,
-  CLIMATE_SUPPORT_FAN_MODE,
-  CLIMATE_SUPPORT_PRESET_MODE,
-  CLIMATE_SUPPORT_SWING_MODE,
-  CLIMATE_SUPPORT_TARGET_HUMIDITY,
-  CLIMATE_SUPPORT_TARGET_TEMPERATURE,
-  CLIMATE_SUPPORT_TARGET_TEMPERATURE_RANGE,
+  ClimateEntityFeature,
   compareClimateHvacModes,
 } from "../../../data/climate";
 import { HomeAssistant } from "../../../types";
@@ -38,9 +36,9 @@ class MoreInfoClimate extends LitElement {
 
   private _resizeDebounce?: number;
 
-  protected render(): TemplateResult {
+  protected render() {
     if (!this.stateObj) {
-      return html``;
+      return nothing;
     }
 
     const hass = this.hass;
@@ -48,26 +46,32 @@ class MoreInfoClimate extends LitElement {
 
     const supportTargetTemperature = supportsFeature(
       stateObj,
-      CLIMATE_SUPPORT_TARGET_TEMPERATURE
+      ClimateEntityFeature.TARGET_TEMPERATURE
     );
     const supportTargetTemperatureRange = supportsFeature(
       stateObj,
-      CLIMATE_SUPPORT_TARGET_TEMPERATURE_RANGE
+      ClimateEntityFeature.TARGET_TEMPERATURE_RANGE
     );
     const supportTargetHumidity = supportsFeature(
       stateObj,
-      CLIMATE_SUPPORT_TARGET_HUMIDITY
+      ClimateEntityFeature.TARGET_HUMIDITY
     );
-    const supportFanMode = supportsFeature(stateObj, CLIMATE_SUPPORT_FAN_MODE);
+    const supportFanMode = supportsFeature(
+      stateObj,
+      ClimateEntityFeature.FAN_MODE
+    );
     const supportPresetMode = supportsFeature(
       stateObj,
-      CLIMATE_SUPPORT_PRESET_MODE
+      ClimateEntityFeature.PRESET_MODE
     );
     const supportSwingMode = supportsFeature(
       stateObj,
-      CLIMATE_SUPPORT_SWING_MODE
+      ClimateEntityFeature.SWING_MODE
     );
-    const supportAuxHeat = supportsFeature(stateObj, CLIMATE_SUPPORT_AUX_HEAT);
+    const supportAuxHeat = supportsFeature(
+      stateObj,
+      ClimateEntityFeature.AUX_HEAT
+    );
 
     const temperatureStepSize =
       stateObj.attributes.target_temp_step ||
@@ -95,7 +99,12 @@ class MoreInfoClimate extends LitElement {
             ${supportTargetTemperature || supportTargetTemperatureRange
               ? html`
                   <div>
-                    ${hass.localize("ui.card.climate.target_temperature")}
+                    ${computeAttributeNameDisplay(
+                      hass.localize,
+                      stateObj,
+                      hass.entities,
+                      "temperature"
+                    )}
                   </div>
                 `
               : ""}
@@ -103,8 +112,9 @@ class MoreInfoClimate extends LitElement {
             stateObj.attributes.temperature !== null
               ? html`
                   <ha-climate-control
+                    .hass=${this.hass}
                     .value=${stateObj.attributes.temperature}
-                    .units=${hass.config.unit_system.temperature}
+                    .unit=${hass.config.unit_system.temperature}
                     .step=${temperatureStepSize}
                     .min=${stateObj.attributes.min_temp}
                     .max=${stateObj.attributes.max_temp}
@@ -118,8 +128,9 @@ class MoreInfoClimate extends LitElement {
               stateObj.attributes.target_temp_high !== null)
               ? html`
                   <ha-climate-control
+                    .hass=${this.hass}
                     .value=${stateObj.attributes.target_temp_low}
-                    .units=${hass.config.unit_system.temperature}
+                    .unit=${hass.config.unit_system.temperature}
                     .step=${temperatureStepSize}
                     .min=${stateObj.attributes.min_temp}
                     .max=${stateObj.attributes.target_temp_high}
@@ -127,8 +138,9 @@ class MoreInfoClimate extends LitElement {
                     @change=${this._targetTemperatureLowChanged}
                   ></ha-climate-control>
                   <ha-climate-control
+                    .hass=${this.hass}
                     .value=${stateObj.attributes.target_temp_high}
-                    .units=${hass.config.unit_system.temperature}
+                    .unit=${hass.config.unit_system.temperature}
                     .step=${temperatureStepSize}
                     .min=${stateObj.attributes.target_temp_low}
                     .max=${stateObj.attributes.max_temp}
@@ -143,20 +155,25 @@ class MoreInfoClimate extends LitElement {
         ${supportTargetHumidity
           ? html`
               <div class="container-humidity">
-                <div>${hass.localize("ui.card.climate.target_humidity")}</div>
+                <div>
+                  ${computeAttributeNameDisplay(
+                    hass.localize,
+                    stateObj,
+                    hass.entities,
+                    "humidity"
+                  )}
+                </div>
                 <div class="single-row">
                   <div class="target-humidity">
                     ${stateObj.attributes.humidity} %
                   </div>
                   <ha-slider
-                    class="humidity"
                     step="1"
                     pin
                     ignore-bar-touch
                     dir=${rtlDirection}
                     .min=${stateObj.attributes.min_humidity}
                     .max=${stateObj.attributes.max_humidity}
-                    .secondaryProgress=${stateObj.attributes.max_humidity}
                     .value=${stateObj.attributes.humidity}
                     @change=${this._targetHumiditySliderChanged}
                   >
@@ -168,109 +185,137 @@ class MoreInfoClimate extends LitElement {
 
         <div class="container-hvac_modes">
           <div class="controls">
-            <ha-paper-dropdown-menu
-              label-float
-              dynamic-align
+            <ha-select
               .label=${hass.localize("ui.card.climate.operation")}
+              .value=${stateObj.state}
+              fixedMenuPosition
+              naturalMenuWidth
+              @selected=${this._handleOperationmodeChanged}
+              @closed=${stopPropagation}
             >
-              <paper-listbox
-                slot="dropdown-content"
-                attr-for-selected="item-name"
-                .selected=${stateObj.state}
-                @selected-changed=${this._handleOperationmodeChanged}
-              >
-                ${stateObj.attributes.hvac_modes
-                  .concat()
-                  .sort(compareClimateHvacModes)
-                  .map(
-                    (mode) => html`
-                      <paper-item item-name=${mode}>
-                        ${hass.localize(`component.climate.state._.${mode}`)}
-                      </paper-item>
-                    `
-                  )}
-              </paper-listbox>
-            </ha-paper-dropdown-menu>
+              ${stateObj.attributes.hvac_modes
+                .concat()
+                .sort(compareClimateHvacModes)
+                .map(
+                  (mode) => html`
+                    <mwc-list-item .value=${mode}>
+                      ${computeStateDisplay(
+                        hass.localize,
+                        stateObj,
+                        hass.locale,
+                        this.hass.config,
+                        hass.entities,
+                        mode
+                      )}
+                    </mwc-list-item>
+                  `
+                )}
+            </ha-select>
           </div>
         </div>
 
-        ${supportPresetMode
+        ${supportPresetMode && stateObj.attributes.preset_modes
           ? html`
               <div class="container-preset_modes">
-                <ha-paper-dropdown-menu
-                  label-float
-                  dynamic-align
-                  .label=${hass.localize("ui.card.climate.preset_mode")}
+                <ha-select
+                  .label=${computeAttributeNameDisplay(
+                    hass.localize,
+                    stateObj,
+                    hass.entities,
+                    "preset_mode"
+                  )}
+                  .value=${stateObj.attributes.preset_mode}
+                  fixedMenuPosition
+                  naturalMenuWidth
+                  @selected=${this._handlePresetmodeChanged}
+                  @closed=${stopPropagation}
                 >
-                  <paper-listbox
-                    slot="dropdown-content"
-                    attr-for-selected="item-name"
-                    .selected=${stateObj.attributes.preset_mode}
-                    @selected-changed=${this._handlePresetmodeChanged}
-                  >
-                    ${stateObj.attributes.preset_modes!.map(
-                      (mode) => html`
-                        <paper-item item-name=${mode}>
-                          ${hass.localize(
-                            `state_attributes.climate.preset_mode.${mode}`
-                          ) || mode}
-                        </paper-item>
-                      `
-                    )}
-                  </paper-listbox>
-                </ha-paper-dropdown-menu>
+                  ${stateObj.attributes.preset_modes!.map(
+                    (mode) => html`
+                      <mwc-list-item .value=${mode}>
+                        ${computeAttributeValueDisplay(
+                          hass.localize,
+                          stateObj,
+                          hass.locale,
+                          hass.config,
+                          hass.entities,
+                          "preset_mode",
+                          mode
+                        )}
+                      </mwc-list-item>
+                    `
+                  )}
+                </ha-select>
               </div>
             `
           : ""}
-        ${supportFanMode
+        ${supportFanMode && stateObj.attributes.fan_modes
           ? html`
               <div class="container-fan_list">
-                <ha-paper-dropdown-menu
-                  label-float
-                  dynamic-align
-                  .label=${hass.localize("ui.card.climate.fan_mode")}
+                <ha-select
+                  .label=${computeAttributeNameDisplay(
+                    hass.localize,
+                    stateObj,
+                    hass.entities,
+                    "fan_mode"
+                  )}
+                  .value=${stateObj.attributes.fan_mode}
+                  fixedMenuPosition
+                  naturalMenuWidth
+                  @selected=${this._handleFanmodeChanged}
+                  @closed=${stopPropagation}
                 >
-                  <paper-listbox
-                    slot="dropdown-content"
-                    attr-for-selected="item-name"
-                    .selected=${stateObj.attributes.fan_mode}
-                    @selected-changed=${this._handleFanmodeChanged}
-                  >
-                    ${stateObj.attributes.fan_modes!.map(
-                      (mode) => html`
-                        <paper-item item-name=${mode}>
-                          ${hass.localize(
-                            `state_attributes.climate.fan_mode.${mode}`
-                          ) || mode}
-                        </paper-item>
-                      `
-                    )}
-                  </paper-listbox>
-                </ha-paper-dropdown-menu>
+                  ${stateObj.attributes.fan_modes!.map(
+                    (mode) => html`
+                      <mwc-list-item .value=${mode}>
+                        ${computeAttributeValueDisplay(
+                          hass.localize,
+                          stateObj,
+                          hass.locale,
+                          this.hass.config,
+                          hass.entities,
+                          "fan_mode",
+                          mode
+                        )}
+                      </mwc-list-item>
+                    `
+                  )}
+                </ha-select>
               </div>
             `
           : ""}
-        ${supportSwingMode
+        ${supportSwingMode && stateObj.attributes.swing_modes
           ? html`
               <div class="container-swing_list">
-                <ha-paper-dropdown-menu
-                  label-float
-                  dynamic-align
-                  .label=${hass.localize("ui.card.climate.swing_mode")}
+                <ha-select
+                  .label=${computeAttributeNameDisplay(
+                    hass.localize,
+                    stateObj,
+                    hass.entities,
+                    "swing_mode"
+                  )}
+                  .value=${stateObj.attributes.swing_mode}
+                  fixedMenuPosition
+                  naturalMenuWidth
+                  @selected=${this._handleSwingmodeChanged}
+                  @closed=${stopPropagation}
                 >
-                  <paper-listbox
-                    slot="dropdown-content"
-                    attr-for-selected="item-name"
-                    .selected=${stateObj.attributes.swing_mode}
-                    @selected-changed=${this._handleSwingmodeChanged}
-                  >
-                    ${stateObj.attributes.swing_modes!.map(
-                      (mode) => html`
-                        <paper-item item-name=${mode}>${mode}</paper-item>
-                      `
-                    )}
-                  </paper-listbox>
-                </ha-paper-dropdown-menu>
+                  ${stateObj.attributes.swing_modes!.map(
+                    (mode) => html`
+                      <mwc-list-item .value=${mode}>
+                        ${computeAttributeValueDisplay(
+                          hass.localize,
+                          stateObj,
+                          hass.locale,
+                          this.hass.config,
+                          hass.entities,
+                          "swing_mode",
+                          mode
+                        )}
+                      </mwc-list-item>
+                    `
+                  )}
+                </ha-select>
               </div>
             `
           : ""}
@@ -279,7 +324,12 @@ class MoreInfoClimate extends LitElement {
               <div class="container-aux_heat">
                 <div class="center horizontal layout single-row">
                   <div class="flex">
-                    ${hass.localize("ui.card.climate.aux_heat")}
+                    ${computeAttributeNameDisplay(
+                      hass.localize,
+                      stateObj,
+                      hass.entities,
+                      "aux_heat"
+                    )}
                   </div>
                   <ha-switch
                     .checked=${stateObj.attributes.aux_heat === "on"}
@@ -365,7 +415,7 @@ class MoreInfoClimate extends LitElement {
   }
 
   private _handleFanmodeChanged(ev) {
-    const newVal = ev.detail.value;
+    const newVal = ev.target.value;
     this._callServiceHelper(
       this.stateObj!.attributes.fan_mode,
       newVal,
@@ -375,14 +425,14 @@ class MoreInfoClimate extends LitElement {
   }
 
   private _handleOperationmodeChanged(ev) {
-    const newVal = ev.detail.value;
+    const newVal = ev.target.value;
     this._callServiceHelper(this.stateObj!.state, newVal, "set_hvac_mode", {
       hvac_mode: newVal,
     });
   }
 
   private _handleSwingmodeChanged(ev) {
-    const newVal = ev.detail.value;
+    const newVal = ev.target.value;
     this._callServiceHelper(
       this.stateObj!.attributes.swing_mode,
       newVal,
@@ -392,13 +442,15 @@ class MoreInfoClimate extends LitElement {
   }
 
   private _handlePresetmodeChanged(ev) {
-    const newVal = ev.detail.value || null;
-    this._callServiceHelper(
-      this.stateObj!.attributes.preset_mode,
-      newVal,
-      "set_preset_mode",
-      { preset_mode: newVal }
-    );
+    const newVal = ev.target.value || null;
+    if (newVal) {
+      this._callServiceHelper(
+        this.stateObj!.attributes.preset_mode,
+        newVal,
+        "set_preset_mode",
+        { preset_mode: newVal }
+      );
+    }
   }
 
   private async _callServiceHelper(
@@ -422,7 +474,9 @@ class MoreInfoClimate extends LitElement {
     // We reset stateObj to re-sync the inputs with the state. It will be out
     // of sync if our service call did not result in the entity to be turned
     // on. Since the state is not changing, the resync is not called automatic.
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    await new Promise((resolve) => {
+      setTimeout(resolve, 2000);
+    });
 
     // No need to resync if we received a new state.
     if (this.stateObj !== curState) {
@@ -443,12 +497,9 @@ class MoreInfoClimate extends LitElement {
         color: var(--primary-text-color);
       }
 
-      ha-paper-dropdown-menu {
+      ha-select {
         width: 100%;
-      }
-
-      paper-item {
-        cursor: pointer;
+        margin-top: 8px;
       }
 
       ha-slider {
@@ -479,11 +530,6 @@ class MoreInfoClimate extends LitElement {
         margin-left: 4%;
       }
 
-      .humidity {
-        --paper-slider-active-color: var(--paper-blue-400);
-        --paper-slider-secondary-color: var(--paper-blue-400);
-      }
-
       .single-row {
         padding: 8px 0;
       }
@@ -492,3 +538,9 @@ class MoreInfoClimate extends LitElement {
 }
 
 customElements.define("more-info-climate", MoreInfoClimate);
+
+declare global {
+  interface HTMLElementTagNameMap {
+    "more-info-climate": MoreInfoClimate;
+  }
+}

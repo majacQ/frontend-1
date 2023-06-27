@@ -1,11 +1,11 @@
 import "@material/mwc-button";
 import "@polymer/iron-flex-layout/iron-flex-layout-classes";
-import "@polymer/paper-input/paper-input";
 import { html } from "@polymer/polymer/lib/utils/html-tag";
 /* eslint-plugin-disable lit */
 import { PolymerElement } from "@polymer/polymer/polymer-element";
 import { load } from "js-yaml";
 import "../../../components/ha-code-editor";
+import "../../../components/ha-textfield";
 import { showAlertDialog } from "../../../dialogs/generic/show-dialog-box";
 import { EventsMixin } from "../../../mixins/events-mixin";
 import LocalizeMixin from "../../../mixins/localize-mixin";
@@ -26,6 +26,10 @@ class HaPanelDevEvent extends EventsMixin(LocalizeMixin(PolymerElement)) {
       <style>
         .content {
           padding: 16px;
+          padding: max(16px, env(safe-area-inset-top))
+            max(16px, env(safe-area-inset-right))
+            max(16px, env(safe-area-inset-bottom))
+            max(16px, env(safe-area-inset-left));
           max-width: 1200px;
           margin: auto;
         }
@@ -46,8 +50,15 @@ class HaPanelDevEvent extends EventsMixin(LocalizeMixin(PolymerElement)) {
           margin-top: 8px;
         }
 
+        ha-textfield {
+          display: block;
+        }
+
         .code-editor {
           margin-right: 16px;
+          margin-inline-start: initial;
+          margin-inline-end: 16px;
+          direction: var(--direction);
         }
 
         .header {
@@ -57,6 +68,9 @@ class HaPanelDevEvent extends EventsMixin(LocalizeMixin(PolymerElement)) {
         event-subscribe-card {
           display: block;
           margin: 16px 16px 0 0;
+          margin-inline-start: initial;
+          margin-inline-end: 16px;
+          direction: var(--direction);
         }
 
         a {
@@ -78,14 +92,15 @@ class HaPanelDevEvent extends EventsMixin(LocalizeMixin(PolymerElement)) {
             </a>
           </p>
           <div class="inputs">
-            <paper-input
+            <ha-textfield
               label="[[localize(
                 'ui.panel.developer-tools.tabs.events.type'
               )]]"
               autofocus
               required
-              value="{{eventType}}"
-            ></paper-input>
+              value="[[eventType]]"
+              on-change="eventTypeChanged"
+            ></ha-textfield>
             <p>[[localize( 'ui.panel.developer-tools.tabs.events.data' )]]</p>
           </div>
           <div class="code-editor">
@@ -94,6 +109,7 @@ class HaPanelDevEvent extends EventsMixin(LocalizeMixin(PolymerElement)) {
               value="[[eventData]]"
               error="[[!validJSON]]"
               on-value-changed="_yamlChanged"
+              dir="ltr"
             ></ha-code-editor>
           </div>
           <mwc-button on-click="fireEvent" raised disabled="[[!validJSON]]"
@@ -105,7 +121,7 @@ class HaPanelDevEvent extends EventsMixin(LocalizeMixin(PolymerElement)) {
 
         <div>
           <div class="header">
-            [[localize( 'ui.panel.developer-tools.tabs.events.available_events'
+            [[localize( 'ui.panel.developer-tools.tabs.events.active_listeners'
             )]]
           </div>
           <events-list
@@ -149,6 +165,10 @@ class HaPanelDevEvent extends EventsMixin(LocalizeMixin(PolymerElement)) {
     this.eventType = ev.detail.eventType;
   }
 
+  eventTypeChanged(ev) {
+    this.eventType = ev.target.value;
+  }
+
   _computeParsedEventData(eventData) {
     try {
       return eventData.trim() ? load(eventData) : {};
@@ -178,8 +198,9 @@ class HaPanelDevEvent extends EventsMixin(LocalizeMixin(PolymerElement)) {
       });
       return;
     }
-    this.hass.callApi("POST", "events/" + this.eventType, this.parsedJSON).then(
-      function () {
+    this.hass
+      .callApi("POST", "events/" + this.eventType, this.parsedJSON)
+      .then(() => {
         this.fire("hass-notification", {
           message: this.hass.localize(
             "ui.panel.developer-tools.tabs.events.notification_event_fired",
@@ -187,8 +208,7 @@ class HaPanelDevEvent extends EventsMixin(LocalizeMixin(PolymerElement)) {
             this.eventType
           ),
         });
-      }.bind(this)
-    );
+      });
   }
 
   computeFormClasses(narrow) {

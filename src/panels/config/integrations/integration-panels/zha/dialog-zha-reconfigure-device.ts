@@ -1,7 +1,7 @@
 import "@material/mwc-button/mwc-button";
 import { mdiCheckCircle, mdiCloseCircle } from "@mdi/js";
 import { UnsubscribeFunc } from "home-assistant-js-websocket";
-import { css, CSSResultGroup, html, LitElement, TemplateResult } from "lit";
+import { css, CSSResultGroup, html, LitElement, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators";
 import { fireEvent } from "../../../../../common/dom/fire_event";
 import "../../../../../components/ha-circular-progress";
@@ -12,7 +12,7 @@ import {
   Cluster,
   ClusterConfigurationEvent,
   ClusterConfigurationStatus,
-  fetchClustersForZhaNode,
+  fetchClustersForZhaDevice,
   reconfigureNode,
   ZHA_CHANNEL_CFG_DONE,
   ZHA_CHANNEL_MSG_BIND,
@@ -35,9 +35,8 @@ class DialogZHAReconfigureDevice extends LitElement {
     ClusterConfigurationStatus
   > = new Map();
 
-  @state() private _params:
-    | ZHAReconfigureDeviceDialogParams
-    | undefined = undefined;
+  @state() private _params: ZHAReconfigureDeviceDialogParams | undefined =
+    undefined;
 
   @state() private _allSuccessful = true;
 
@@ -56,23 +55,24 @@ class DialogZHAReconfigureDevice extends LitElement {
     this._status = undefined;
     this._stages = undefined;
     this._clusterConfigurationStatuses = undefined;
+    this._showDetails = false;
     fireEvent(this, "dialog-closed", { dialog: this.localName });
   }
 
-  protected render(): TemplateResult {
+  protected render() {
     if (!this._params) {
-      return html``;
+      return nothing;
     }
 
     return html`
       <ha-dialog
         open
-        @closed="${this.closeDialog}"
+        @closed=${this.closeDialog}
         .heading=${createCloseHeading(
           this.hass,
           this.hass.localize(`ui.dialogs.zha_reconfigure_device.heading`) +
             ": " +
-            (this._params?.device.user_given_name || this._params?.device.name)
+            (this._params.device.user_given_name || this._params.device.name)
         )}
       >
         ${!this._status
@@ -226,10 +226,10 @@ class DialogZHAReconfigureDevice extends LitElement {
                   )}
                 </h2>
 
-                ${this._clusterConfigurationStatuses!.size > 0
+                ${this._clusterConfigurationStatuses?.size
                   ? html`
                       ${Array.from(
-                        this._clusterConfigurationStatuses!.values()
+                        this._clusterConfigurationStatuses.values()
                       ).map(
                         (clusterStatus) => html`
                           <div class="grid-item">
@@ -321,16 +321,16 @@ class DialogZHAReconfigureDevice extends LitElement {
       return;
     }
     this._clusterConfigurationStatuses = new Map(
-      (await fetchClustersForZhaNode(this.hass, this._params.device.ieee)).map(
-        (cluster: Cluster) => [
-          cluster.id,
-          {
-            cluster: cluster,
-            bindSuccess: undefined,
-            attributes: new Map<number, AttributeConfigurationStatus>(),
-          },
-        ]
-      )
+      (
+        await fetchClustersForZhaDevice(this.hass, this._params.device.ieee)
+      ).map((cluster: Cluster) => [
+        cluster.id,
+        {
+          cluster: cluster,
+          bindSuccess: undefined,
+          attributes: new Map<number, AttributeConfigurationStatus>(),
+        },
+      ])
     );
     this._subscribe(this._params);
     this._status = "started";
@@ -341,9 +341,10 @@ class DialogZHAReconfigureDevice extends LitElement {
       this._unsubscribe();
       this._status = this._allSuccessful ? "finished" : "failed";
     } else {
-      const clusterConfigurationStatus = this._clusterConfigurationStatuses!.get(
-        message.zha_channel_msg_data.cluster_id
-      );
+      const clusterConfigurationStatus =
+        this._clusterConfigurationStatuses!.get(
+          message.zha_channel_msg_data.cluster_id
+        );
       if (message.type === ZHA_CHANNEL_MSG_BIND) {
         if (!this._stages) {
           this._stages = ["binding"];

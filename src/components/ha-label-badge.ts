@@ -6,15 +6,11 @@ import {
   PropertyValues,
   TemplateResult,
 } from "lit";
-import { property } from "lit/decorators";
+import { customElement, property } from "lit/decorators";
 import { classMap } from "lit/directives/class-map";
-import "./ha-icon";
 
+@customElement("ha-label-badge")
 class HaLabelBadge extends LitElement {
-  @property() public value?: string;
-
-  @property() public icon?: string;
-
   @property() public label?: string;
 
   @property() public description?: string;
@@ -25,28 +21,16 @@ class HaLabelBadge extends LitElement {
     return html`
       <div class="badge-container">
         <div class="label-badge" id="badge">
-          <div
-            class="${classMap({
-              value: true,
-              big: Boolean(this.value && this.value.length > 4),
-            })}"
-          >
-            <slot>
-              ${this.icon && !this.value && !this.image
-                ? html` <ha-icon .icon=${this.icon}></ha-icon> `
-                : ""}
-              ${this.value && !this.image
-                ? html` <span>${this.value}</span> `
-                : ""}
-            </slot>
+          <div class="value">
+            <slot></slot>
           </div>
           ${this.label
             ? html`
                 <div
-                  class="${classMap({
+                  class=${classMap({
                     label: true,
                     big: this.label.length > 5,
-                  })}"
+                  })}
                 >
                   <span>${this.label}</span>
                 </div>
@@ -54,7 +38,7 @@ class HaLabelBadge extends LitElement {
             : ""}
         </div>
         ${this.description
-          ? html` <div class="title">${this.description}</div> `
+          ? html`<div class="title">${this.description}</div>`
           : ""}
       </div>
     `;
@@ -78,7 +62,7 @@ class HaLabelBadge extends LitElement {
           height: var(--ha-label-badge-size, 2.5em);
           line-height: var(--ha-label-badge-size, 2.5em);
           font-size: var(--ha-label-badge-font-size, 1.5em);
-          border-radius: 50%;
+          border-radius: var(--ha-label-badge-border-radius, 50%);
           border: 0.1em solid var(--ha-label-badge-color, var(--primary-color));
           color: var(--label-badge-text-color, rgb(76, 76, 76));
 
@@ -87,13 +71,14 @@ class HaLabelBadge extends LitElement {
           background-size: cover;
           transition: border 0.3s ease-in-out;
         }
+        .label-badge .label.big span {
+          font-size: 90%;
+          padding: 10% 12% 7% 12%; /* push smaller text a bit down to center vertically */
+        }
         .label-badge .value {
           font-size: 90%;
           overflow: hidden;
           text-overflow: ellipsis;
-        }
-        .label-badge .value.big {
-          font-size: 70%;
         }
         .label-badge .label {
           position: absolute;
@@ -118,10 +103,6 @@ class HaLabelBadge extends LitElement {
           text-overflow: ellipsis;
           transition: background-color 0.3s ease-in-out;
           text-transform: var(--ha-label-badge-label-text-transform, uppercase);
-        }
-        .label-badge .label.big span {
-          font-size: 90%;
-          padding: 10% 12% 7% 12%; /* push smaller text a bit down to center vertically */
         }
         .badge-container .title {
           margin-top: 1em;
@@ -152,5 +133,3 @@ declare global {
     "ha-label-badge": HaLabelBadge;
   }
 }
-
-customElements.define("ha-label-badge", HaLabelBadge);

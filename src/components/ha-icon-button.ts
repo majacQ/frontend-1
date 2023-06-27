@@ -1,15 +1,32 @@
 import "@material/mwc-icon-button";
+import type { IconButton } from "@material/mwc-icon-button";
 import { css, CSSResultGroup, html, LitElement, TemplateResult } from "lit";
-import { customElement, property } from "lit/decorators";
-import "./ha-icon";
+import { customElement, property, query } from "lit/decorators";
+import { ifDefined } from "lit/directives/if-defined";
+import "./ha-svg-icon";
 
 @customElement("ha-icon-button")
 export class HaIconButton extends LitElement {
   @property({ type: Boolean, reflect: true }) disabled = false;
 
-  @property({ type: String }) icon = "";
+  // SVG icon path (if you need a non SVG icon instead, use the provided slot to pass an <ha-icon> in)
+  @property({ type: String }) path?: string;
 
-  @property({ type: String }) label = "";
+  // Label that is used for ARIA support and as tooltip
+  @property({ type: String }) label?: string;
+
+  // These should always be set as properties, not attributes,
+  // so that only the <button> element gets the attribute
+  @property({ type: String, attribute: "aria-haspopup" })
+  override ariaHasPopup!: IconButton["ariaHasPopup"];
+
+  @property({ type: Boolean }) hideTitle = false;
+
+  @query("mwc-icon-button", true) private _button?: IconButton;
+
+  public override focus() {
+    this._button?.focus();
+  }
 
   static shadowRootOptions: ShadowRootInit = {
     mode: "open",
@@ -18,8 +35,15 @@ export class HaIconButton extends LitElement {
 
   protected render(): TemplateResult {
     return html`
-      <mwc-icon-button .label=${this.label} .disabled=${this.disabled}>
-        <ha-icon .icon=${this.icon}></ha-icon>
+      <mwc-icon-button
+        aria-label=${ifDefined(this.label)}
+        title=${ifDefined(this.hideTitle ? undefined : this.label)}
+        aria-haspopup=${ifDefined(this.ariaHasPopup)}
+        .disabled=${this.disabled}
+      >
+        ${this.path
+          ? html`<ha-svg-icon .path=${this.path}></ha-svg-icon>`
+          : html`<slot></slot>`}
       </mwc-icon-button>
     `;
   }
@@ -36,9 +60,6 @@ export class HaIconButton extends LitElement {
       mwc-icon-button {
         --mdc-theme-on-primary: currentColor;
         --mdc-theme-text-disabled-on-light: var(--disabled-text-color);
-      }
-      ha-icon {
-        --ha-icon-display: inline;
       }
     `;
   }

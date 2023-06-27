@@ -1,24 +1,29 @@
 import { indentLess, indentMore } from "@codemirror/commands";
-import { HighlightStyle, tags } from "@codemirror/highlight";
+import {
+  HighlightStyle,
+  StreamLanguage,
+  syntaxHighlighting,
+} from "@codemirror/language";
 import { jinja2 } from "@codemirror/legacy-modes/mode/jinja2";
 import { yaml } from "@codemirror/legacy-modes/mode/yaml";
 import { Compartment } from "@codemirror/state";
-import { StreamLanguage } from "@codemirror/stream-parser";
 import { EditorView, KeyBinding } from "@codemirror/view";
+import { tags } from "@lezer/highlight";
 
-export { defaultKeymap } from "@codemirror/commands";
-export { lineNumbers } from "@codemirror/gutter";
-export { HighlightStyle, tags } from "@codemirror/highlight";
-export { history, historyKeymap } from "@codemirror/history";
-export { rectangularSelection } from "@codemirror/rectangular-selection";
+export { autocompletion } from "@codemirror/autocomplete";
+export { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
+export { highlightingFor } from "@codemirror/language";
 export { highlightSelectionMatches, searchKeymap } from "@codemirror/search";
-export { EditorState, Prec } from "@codemirror/state";
+export { EditorState } from "@codemirror/state";
 export {
   drawSelection,
   EditorView,
   highlightActiveLine,
   keymap,
+  lineNumbers,
+  rectangularSelection,
 } from "@codemirror/view";
+export { tags } from "@lezer/highlight";
 
 export const langs = {
   jinja2: StreamLanguage.define(jinja2),
@@ -36,25 +41,32 @@ export const tabKeyBindings: KeyBinding[] = [
   },
 ];
 
-export const theme = EditorView.theme({
+export const haTheme = EditorView.theme({
   "&": {
     color: "var(--primary-text-color)",
     backgroundColor:
-      "var(--code-editor-background-color, var(--card-background-color))",
-    "& ::selection": { backgroundColor: "rgba(var(--rgb-primary-color), 0.3)" },
+      "var(--code-editor-background-color, var(--mdc-text-field-fill-color, whitesmoke))",
+    borderRadius:
+      "var(--mdc-shape-small, 4px) var(--mdc-shape-small, 4px) 0px 0px",
     caretColor: "var(--secondary-text-color)",
     height: "var(--code-mirror-height, auto)",
     maxHeight: "var(--code-mirror-max-height, unset)",
   },
 
-  "&.cm-focused": { outline: "none" },
+  "&.cm-editor.cm-focused": {
+    outline: "none",
+  },
 
   "&.cm-focused .cm-cursor": {
     borderLeftColor: "var(--secondary-text-color)",
   },
 
-  "&.cm-focused .cm-selectionBackground, .cm-selectionBackground": {
-    backgroundColor: "rgba(var(--rgb-primary-color), 0.3)",
+  ".cm-selectionBackground, ::selection": {
+    backgroundColor: "rgba(var(--rgb-primary-color), 0.1)",
+  },
+
+  "&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground": {
+    backgroundColor: "rgba(var(--rgb-primary-color), 0.2)",
   },
 
   ".cm-activeLine": {
@@ -63,7 +75,10 @@ export const theme = EditorView.theme({
 
   ".cm-scroller": { outline: "none" },
 
-  ".cm-content": { caretColor: "var(--secondary-text-color)" },
+  ".cm-content": {
+    caretColor: "var(--secondary-text-color)",
+    paddingTop: "16px",
+  },
 
   ".cm-panels": {
     backgroundColor: "var(--primary-background-color)",
@@ -109,6 +124,47 @@ export const theme = EditorView.theme({
     },
   },
 
+  ".cm-tooltip": {
+    color: "var(--primary-text-color)",
+    backgroundColor:
+      "var(--code-editor-background-color, var(--card-background-color))",
+    border: "1px solid var(--divider-color)",
+    borderRadius: "var(--mdc-shape-medium, 4px)",
+    boxShadow:
+      "0px 5px 5px -3px rgb(0 0 0 / 20%), 0px 8px 10px 1px rgb(0 0 0 / 14%), 0px 3px 14px 2px rgb(0 0 0 / 12%)",
+  },
+
+  "& .cm-tooltip.cm-tooltip-autocomplete > ul > li": {
+    padding: "4px 8px",
+  },
+
+  "& .cm-tooltip-autocomplete ul li[aria-selected]": {
+    background: "var(--primary-color)",
+    color: "var(--text-primary-color)",
+  },
+
+  ".cm-completionIcon": {
+    display: "none",
+  },
+
+  ".cm-completionDetail": {
+    fontFamily: "Roboto",
+    color: "var(--secondary-text-color)",
+  },
+
+  "li[aria-selected] .cm-completionDetail": {
+    color: "var(--text-primary-color)",
+  },
+
+  "& .cm-completionInfo.cm-completionInfo-right": {
+    left: "calc(100% + 4px)",
+  },
+
+  "& .cm-tooltip.cm-completionInfo": {
+    padding: "4px 8px",
+    marginTop: "-5px",
+  },
+
   ".cm-selectionMatch": {
     backgroundColor: "rgba(var(--rgb-primary-color), 0.1)",
   },
@@ -124,14 +180,14 @@ export const theme = EditorView.theme({
 
   ".cm-gutters": {
     backgroundColor:
-      "var(--paper-dialog-background-color, var(--primary-background-color))",
+      "var(--code-editor-gutter-color, var(--secondary-background-color, whitesmoke))",
     color: "var(--paper-dialog-color, var(--secondary-text-color))",
     border: "none",
     borderRight:
       "1px solid var(--paper-input-container-color, var(--secondary-text-color))",
     paddingRight: "1px",
   },
-  "&.cm-focused cm-gutters": {
+  "&.cm-focused .cm-gutters": {
     borderRight:
       "2px solid var(--paper-input-container-focus-color, var(--primary-color))",
     paddingRight: "0",
@@ -139,7 +195,7 @@ export const theme = EditorView.theme({
   ".cm-gutterElement.lineNumber": { color: "inherit" },
 });
 
-export const highlightStyle = HighlightStyle.define([
+const haHighlightStyle = HighlightStyle.define([
   { tag: tags.keyword, color: "var(--codemirror-keyword, #6262FF)" },
   {
     tag: [
@@ -212,3 +268,5 @@ export const highlightStyle = HighlightStyle.define([
   { tag: tags.inserted, color: "var(--codemirror-string2, #07a)" },
   { tag: tags.invalid, color: "var(--error-color)" },
 ]);
+
+export const haSyntaxHighlighting = syntaxHighlighting(haHighlightStyle);

@@ -1,4 +1,4 @@
-import { css, CSSResultGroup, html, LitElement, TemplateResult } from "lit";
+import { css, CSSResultGroup, html, LitElement, nothing } from "lit";
 import { customElement, state } from "lit/decorators";
 import "../../../components/ha-icon";
 import { LovelaceRow, TextConfig } from "../entity-rows/types";
@@ -15,15 +15,15 @@ class HuiTextRow extends LitElement implements LovelaceRow {
     this._config = config;
   }
 
-  protected render(): TemplateResult {
+  protected render() {
     if (!this._config) {
-      return html``;
+      return nothing;
     }
 
     return html`
-      <ha-icon .icon="${this._config.icon}"></ha-icon>
-      <div class="name">${this._config.name}</div>
-      <div class="text">${this._config.text}</div>
+      <ha-icon .icon=${this._config.icon}></ha-icon>
+      <div class="name" .title=${this._config.name}>${this._config.name}</div>
+      <div class="text" .title=${this._config.text}>${this._config.text}</div>
     `;
   }
 

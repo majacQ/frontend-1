@@ -1,7 +1,7 @@
 import { ActionConfig } from "../../../data/lovelace";
 import { HomeAssistant } from "../../../types";
 import { Condition } from "../common/validate-condition";
-import { TimestampRenderingFormats } from "../components/types";
+import { TimestampRenderingFormat } from "../components/types";
 
 export interface EntityConfig {
   entity: string;
@@ -55,7 +55,7 @@ export interface CastConfig {
   type: "cast";
   icon?: string;
   name?: string;
-  view: string | number;
+  view?: string | number;
   dashboard?: string;
   // Hide the row if either unsupported browser or no API available.
   hide_if_unavailable?: boolean;
@@ -92,5 +92,5 @@ export interface AttributeRowConfig extends EntityConfig {
   attribute: string;
   prefix?: string;
   suffix?: string;
-  format?: TimestampRenderingFormats;
+  format?: TimestampRenderingFormat;
 }

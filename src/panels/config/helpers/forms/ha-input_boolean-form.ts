@@ -1,8 +1,8 @@
-import "@polymer/paper-input/paper-input";
-import { css, CSSResultGroup, html, LitElement, TemplateResult } from "lit";
+import { css, CSSResultGroup, html, LitElement, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators";
 import { fireEvent } from "../../../../common/dom/fire_event";
-import "../../../../components/ha-icon-input";
+import "../../../../components/ha-icon-picker";
+import "../../../../components/ha-textfield";
 import { InputBoolean } from "../../../../data/input_boolean";
 import { haStyle } from "../../../../resources/styles";
 import { HomeAssistant } from "../../../../types";
@@ -32,41 +32,42 @@ class HaInputBooleanForm extends LitElement {
 
   public focus() {
     this.updateComplete.then(() =>
-      (this.shadowRoot?.querySelector(
-        "[dialogInitialFocus]"
-      ) as HTMLElement)?.focus()
+      (
+        this.shadowRoot?.querySelector("[dialogInitialFocus]") as HTMLElement
+      )?.focus()
     );
   }
 
-  protected render(): TemplateResult {
+  protected render() {
     if (!this.hass) {
-      return html``;
+      return nothing;
     }
     const nameInvalid = !this._name || this._name.trim() === "";
 
     return html`
       <div class="form">
-        <paper-input
+        <ha-textfield
           .value=${this._name}
           .configValue=${"name"}
-          @value-changed=${this._valueChanged}
+          @input=${this._valueChanged}
           .label=${this.hass!.localize(
             "ui.dialogs.helper_settings.generic.name"
           )}
-          .errorMessage="${this.hass!.localize(
+          .errorMessage=${this.hass!.localize(
             "ui.dialogs.helper_settings.required_error_msg"
-          )}"
+          )}
           .invalid=${nameInvalid}
           dialogInitialFocus
-        ></paper-input>
-        <ha-icon-input
+        ></ha-textfield>
+        <ha-icon-picker
+          .hass=${this.hass}
           .value=${this._icon}
           .configValue=${"icon"}
           @value-changed=${this._valueChanged}
           .label=${this.hass!.localize(
             "ui.dialogs.helper_settings.generic.icon"
           )}
-        ></ha-icon-input>
+        ></ha-icon-picker>
       </div>
     `;
   }
@@ -77,7 +78,7 @@ class HaInputBooleanForm extends LitElement {
     }
     ev.stopPropagation();
     const configValue = (ev.target as any).configValue;
-    const value = ev.detail.value;
+    const value = ev.detail?.value || (ev.target as any).value;
     if (this[`_${configValue}`] === value) {
       return;
     }
@@ -85,7 +86,7 @@ class HaInputBooleanForm extends LitElement {
     if (!value) {
       delete newValue[configValue];
     } else {
-      newValue[configValue] = ev.detail.value;
+      newValue[configValue] = value;
     }
     fireEvent(this, "value-changed", {
       value: newValue,
@@ -101,6 +102,10 @@ class HaInputBooleanForm extends LitElement {
         }
         .row {
           padding: 16px 0;
+        }
+        ha-textfield {
+          display: block;
+          margin: 8px 0;
         }
       `,
     ];

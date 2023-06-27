@@ -11,7 +11,6 @@ import { customElement, property } from "lit/decorators";
 import { atLeastVersion } from "../common/config/version";
 import { applyThemesOnElement } from "../common/dom/apply_themes_on_element";
 import "../components/ha-card";
-import "../resources/ha-style";
 import { haStyle } from "../resources/styles";
 import { HomeAssistant } from "../types";
 import "./hass-subpage";
@@ -91,15 +90,9 @@ class SupervisorErrorScreen extends LitElement {
           : this.hass.themes.default_theme);
 
       themeSettings = this.hass.selectedTheme;
-      if (themeName === "default" && themeSettings?.dark === undefined) {
-        themeSettings = {
-          ...this.hass.selectedTheme,
-          dark: this.hass.themes.darkMode,
-        };
-      }
     } else {
       themeName =
-        ((this.hass.selectedTheme as unknown) as string) ||
+        (this.hass.selectedTheme as unknown as string) ||
         this.hass.themes.default_theme;
     }
 
@@ -107,7 +100,8 @@ class SupervisorErrorScreen extends LitElement {
       this.parentElement,
       this.hass.themes,
       themeName,
-      themeSettings
+      themeSettings,
+      true
     );
   }
 

@@ -1,10 +1,11 @@
-import "@polymer/paper-input/paper-input";
-import "@polymer/paper-radio-button/paper-radio-button";
-import "@polymer/paper-radio-group/paper-radio-group";
-import { css, CSSResultGroup, html, LitElement, TemplateResult } from "lit";
+import { css, CSSResultGroup, html, LitElement, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators";
 import { fireEvent } from "../../../../common/dom/fire_event";
-import "../../../../components/ha-icon-input";
+import "../../../../components/ha-formfield";
+import "../../../../components/ha-icon-picker";
+import "../../../../components/ha-radio";
+import type { HaRadio } from "../../../../components/ha-radio";
+import "../../../../components/ha-textfield";
 import { InputDateTime } from "../../../../data/input_datetime";
 import { haStyle } from "../../../../resources/styles";
 import { HomeAssistant } from "../../../../types";
@@ -34,6 +35,8 @@ class HaInputDateTimeForm extends LitElement {
           : item.has_time
           ? "time"
           : "date";
+      this._item.has_date =
+        !item.has_date && !item.has_time ? true : item.has_date;
     } else {
       this._name = "";
       this._icon = "";
@@ -43,70 +46,88 @@ class HaInputDateTimeForm extends LitElement {
 
   public focus() {
     this.updateComplete.then(() =>
-      (this.shadowRoot?.querySelector(
-        "[dialogInitialFocus]"
-      ) as HTMLElement)?.focus()
+      (
+        this.shadowRoot?.querySelector("[dialogInitialFocus]") as HTMLElement
+      )?.focus()
     );
   }
 
-  protected render(): TemplateResult {
+  protected render() {
     if (!this.hass) {
-      return html``;
+      return nothing;
     }
     const nameInvalid = !this._name || this._name.trim() === "";
 
     return html`
       <div class="form">
-        <paper-input
+        <ha-textfield
           .value=${this._name}
           .configValue=${"name"}
-          @value-changed=${this._valueChanged}
+          @input=${this._valueChanged}
           .label=${this.hass!.localize(
             "ui.dialogs.helper_settings.generic.name"
           )}
-          .errorMessage="${this.hass!.localize(
+          .errorMessage=${this.hass!.localize(
             "ui.dialogs.helper_settings.required_error_msg"
-          )}"
+          )}
           .invalid=${nameInvalid}
           dialogInitialFocus
-        ></paper-input>
-        <ha-icon-input
+        ></ha-textfield>
+        <ha-icon-picker
+          .hass=${this.hass}
           .value=${this._icon}
           .configValue=${"icon"}
           @value-changed=${this._valueChanged}
           .label=${this.hass!.localize(
             "ui.dialogs.helper_settings.generic.icon"
           )}
-        ></ha-icon-input>
+        ></ha-icon-picker>
         <br />
         ${this.hass.localize("ui.dialogs.helper_settings.input_datetime.mode")}:
         <br />
-        <paper-radio-group
-          .selected=${this._mode}
-          @selected-changed=${this._modeChanged}
+
+        <ha-formfield
+          .label=${this.hass.localize(
+            "ui.dialogs.helper_settings.input_datetime.date"
+          )}
         >
-          <paper-radio-button name="date">
-            ${this.hass.localize(
-              "ui.dialogs.helper_settings.input_datetime.date"
-            )}
-          </paper-radio-button>
-          <paper-radio-button name="time">
-            ${this.hass.localize(
-              "ui.dialogs.helper_settings.input_datetime.time"
-            )}
-          </paper-radio-button>
-          <paper-radio-button name="datetime">
-            ${this.hass.localize(
-              "ui.dialogs.helper_settings.input_datetime.datetime"
-            )}
-          </paper-radio-button>
-        </paper-radio-group>
+          <ha-radio
+            name="mode"
+            value="date"
+            .checked=${this._mode === "date"}
+            @change=${this._modeChanged}
+          ></ha-radio>
+        </ha-formfield>
+        <ha-formfield
+          .label=${this.hass.localize(
+            "ui.dialogs.helper_settings.input_datetime.time"
+          )}
+        >
+          <ha-radio
+            name="mode"
+            value="time"
+            .checked=${this._mode === "time"}
+            @change=${this._modeChanged}
+          ></ha-radio>
+        </ha-formfield>
+        <ha-formfield
+          .label=${this.hass.localize(
+            "ui.dialogs.helper_settings.input_datetime.datetime"
+          )}
+        >
+          <ha-radio
+            name="mode"
+            value="datetime"
+            .checked=${this._mode === "datetime"}
+            @change=${this._modeChanged}
+          ></ha-radio>
+        </ha-formfield>
       </div>
     `;
   }
 
   private _modeChanged(ev: CustomEvent) {
-    const mode = ev.detail.value;
+    const mode = (ev.target as HaRadio).value;
     fireEvent(this, "value-changed", {
       value: {
         ...this._item,
@@ -122,7 +143,7 @@ class HaInputDateTimeForm extends LitElement {
     }
     ev.stopPropagation();
     const configValue = (ev.target as any).configValue;
-    const value = ev.detail.value;
+    const value = ev.detail?.value || (ev.target as any).value;
     if (this[`_${configValue}`] === value) {
       return;
     }
@@ -130,7 +151,7 @@ class HaInputDateTimeForm extends LitElement {
     if (!value) {
       delete newValue[configValue];
     } else {
-      newValue[configValue] = ev.detail.value;
+      newValue[configValue] = value;
     }
     fireEvent(this, "value-changed", {
       value: newValue,
@@ -146,6 +167,10 @@ class HaInputDateTimeForm extends LitElement {
         }
         .row {
           padding: 16px 0;
+        }
+        ha-textfield {
+          display: block;
+          margin: 8px 0;
         }
       `,
     ];

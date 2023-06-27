@@ -12,6 +12,8 @@ class MQTTMessages extends LitElement {
 
   @property() public messages!: MQTTMessage[];
 
+  @property() public direction!: string;
+
   @property() public showAsYaml = false;
 
   @property() public showDeserialized = false;
@@ -50,10 +52,11 @@ class MQTTMessages extends LitElement {
                 (message) => html`
                   <li class="message">
                     <div class="time">
-                      Received
+                      ${this.direction}
                       ${formatTimeWithSeconds(
                         new Date(message.time),
-                        this.hass.locale
+                        this.hass.locale,
+                        this.hass.config
                       )}
                     </div>
                     ${this._renderSingleMessage(message)}
@@ -107,7 +110,7 @@ class MQTTMessages extends LitElement {
     if (typeof payload === "string") {
       try {
         o = JSON.parse(payload);
-      } catch (e) {
+      } catch (err: any) {
         o = null;
       }
     }

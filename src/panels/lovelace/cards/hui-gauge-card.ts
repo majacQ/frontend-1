@@ -5,7 +5,7 @@ import {
   html,
   LitElement,
   PropertyValues,
-  TemplateResult,
+  nothing,
 } from "lit";
 import { customElement, property, state } from "lit/decorators";
 import { styleMap } from "lit/directives/style-map";
@@ -13,6 +13,7 @@ import { applyThemesOnElement } from "../../../common/dom/apply_themes_on_elemen
 import { fireEvent } from "../../../common/dom/fire_event";
 import { computeStateName } from "../../../common/entity/compute_state_name";
 import { isValidEntityId } from "../../../common/entity/valid_entity_id";
+import { getNumberFormatOptions } from "../../../common/number/format_number";
 import "../../../components/ha-card";
 import "../../../components/ha-gauge";
 import { UNAVAILABLE } from "../../../data/entity";
@@ -23,11 +24,14 @@ import { createEntityNotFoundWarning } from "../components/hui-warning";
 import type { LovelaceCard, LovelaceCardEditor } from "../types";
 import type { GaugeCardConfig } from "./types";
 
+export const DEFAULT_MIN = 0;
+export const DEFAULT_MAX = 100;
+
 export const severityMap = {
-  red: "var(--label-badge-red)",
-  green: "var(--label-badge-green)",
-  yellow: "var(--label-badge-yellow)",
-  normal: "var(--label-badge-blue)",
+  red: "var(--error-color)",
+  green: "var(--success-color)",
+  yellow: "var(--warning-color)",
+  normal: "var(--info-color)",
 };
 
 @customElement("hui-gauge-card")
@@ -75,12 +79,12 @@ class HuiGaugeCard extends LitElement implements LovelaceCard {
       throw new Error("Invalid entity");
     }
 
-    this._config = { min: 0, max: 100, ...config };
+    this._config = { min: DEFAULT_MIN, max: DEFAULT_MAX, ...config };
   }
 
-  protected render(): TemplateResult {
+  protected render() {
     if (!this._config || !this.hass) {
-      return html``;
+      return nothing;
     }
 
     const stateObj = this.hass.states[this._config.entity];
@@ -119,6 +123,8 @@ class HuiGaugeCard extends LitElement implements LovelaceCard {
       `;
     }
 
+    const name = this._config.name ?? computeStateName(stateObj);
+
     // Use `stateObj.state` as value to keep formatting (e.g trailing zeros)
     // for consistent value display across gauge, entity, entity-row, etc.
     return html`
@@ -127,6 +133,10 @@ class HuiGaugeCard extends LitElement implements LovelaceCard {
           .min=${this._config.min!}
           .max=${this._config.max!}
           .value=${stateObj.state}
+          .formatOptions=${getNumberFormatOptions(
+            stateObj,
+            this.hass.entities[stateObj.entity_id]
+          )}
           .locale=${this.hass!.locale}
           .label=${this._config!.unit ||
           this.hass?.states[this._config!.entity].attributes
@@ -135,10 +145,10 @@ class HuiGaugeCard extends LitElement implements LovelaceCard {
           style=${styleMap({
             "--gauge-color": this._computeSeverity(entityState),
           })}
+          .needle=${this._config!.needle}
+          .levels=${this._config!.needle ? this._severityLevels() : undefined}
         ></ha-gauge>
-        <div class="name">
-          ${this._config.name || computeStateName(stateObj)}
-        </div>
+        <div class="name" .title=${name}>${name}</div>
       </ha-card>
     `;
   }
@@ -168,7 +178,30 @@ class HuiGaugeCard extends LitElement implements LovelaceCard {
     }
   }
 
-  private _computeSeverity(numberValue: number): string {
+  private _computeSeverity(numberValue: number): string | undefined {
+    if (this._config!.needle) {
+      return undefined;
+    }
+
+    // new format
+    let segments = this._config!.segments;
+    if (segments) {
+      segments = [...segments].sort((a, b) => a.from - b.from);
+
+      for (let i = 0; i < segments.length; i++) {
+        const segment = segments[i];
+        if (
+          segment &&
+          numberValue >= segment.from &&
+          (i + 1 === segments.length || numberValue < segments[i + 1]?.from)
+        ) {
+          return segment.color;
+        }
+      }
+      return severityMap.normal;
+    }
+
+    // old format
     const sections = this._config!.severity;
 
     if (!sections) {
@@ -200,6 +233,31 @@ class HuiGaugeCard extends LitElement implements LovelaceCard {
     return severityMap.normal;
   }
 
+  private _severityLevels() {
+    // new format
+    const segments = this._config!.segments;
+    if (segments) {
+      return segments.map((segment) => ({
+        level: segment?.from,
+        stroke: segment?.color,
+        label: segment?.label,
+      }));
+    }
+
+    // old format
+    const sections = this._config!.severity;
+
+    if (!sections) {
+      return [{ level: 0, stroke: severityMap.normal }];
+    }
+
+    const sectionsArray = Object.keys(sections);
+    return sectionsArray.map((severity) => ({
+      level: sections[severity],
+      stroke: severityMap[severity],
+    }));
+  }
+
   private _handleClick(): void {
     fireEvent(this, "hass-more-info", { entityId: this._config!.entity });
   }
@@ -220,11 +278,9 @@ class HuiGaugeCard extends LitElement implements LovelaceCard {
 
       ha-card:focus {
         outline: none;
-        background: var(--divider-color);
       }
 
       ha-gauge {
-        --gauge-color: var(--label-badge-blue);
         width: 100%;
         max-width: 250px;
       }

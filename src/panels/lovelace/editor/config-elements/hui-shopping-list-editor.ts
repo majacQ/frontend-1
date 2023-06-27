@@ -1,25 +1,29 @@
-import "@polymer/paper-input/paper-input";
-import { css, CSSResultGroup, html, LitElement, TemplateResult } from "lit";
+import { css, CSSResultGroup, html, LitElement, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators";
-import { assert, object, optional, string } from "superstruct";
+import { assert, assign, object, optional, string } from "superstruct";
 import { isComponentLoaded } from "../../../../common/config/is_component_loaded";
 import { fireEvent } from "../../../../common/dom/fire_event";
+import "../../../../components/ha-textfield";
+import "../../../../components/ha-theme-picker";
 import { HomeAssistant } from "../../../../types";
 import { ShoppingListCardConfig } from "../../cards/types";
-import "../../components/hui-theme-select-editor";
 import { LovelaceCardEditor } from "../../types";
+import { baseLovelaceCardConfig } from "../structs/base-card-struct";
 import { EditorTarget, EntitiesEditorEvent } from "../types";
 
-const cardConfigStruct = object({
-  type: string(),
-  title: optional(string()),
-  theme: optional(string()),
-});
+const cardConfigStruct = assign(
+  baseLovelaceCardConfig,
+  object({
+    title: optional(string()),
+    theme: optional(string()),
+  })
+);
 
 @customElement("hui-shopping-list-card-editor")
 export class HuiShoppingListEditor
   extends LitElement
-  implements LovelaceCardEditor {
+  implements LovelaceCardEditor
+{
   @property({ attribute: false }) public hass?: HomeAssistant;
 
   @state() private _config?: ShoppingListCardConfig;
@@ -37,9 +41,9 @@ export class HuiShoppingListEditor
     return this._config!.theme || "";
   }
 
-  protected render(): TemplateResult {
+  protected render() {
     if (!this.hass || !this._config) {
-      return html``;
+      return nothing;
     }
 
     return html`
@@ -53,22 +57,27 @@ export class HuiShoppingListEditor
               </div>
             `
           : ""}
-        <paper-input
+        <ha-textfield
           .label="${this.hass.localize(
             "ui.panel.lovelace.editor.card.generic.title"
           )} (${this.hass.localize(
             "ui.panel.lovelace.editor.card.config.optional"
           )})"
-          .value="${this._title}"
-          .configValue="${"title"}"
-          @value-changed="${this._valueChanged}"
-        ></paper-input>
-        <hui-theme-select-editor
+          .value=${this._title}
+          .configValue=${"title"}
+          @input=${this._valueChanged}
+        ></ha-textfield>
+        <ha-theme-picker
           .hass=${this.hass}
-          .value="${this._theme}"
-          .configValue="${"theme"}"
-          @value-changed="${this._valueChanged}"
-        ></hui-theme-select-editor>
+          .value=${this._theme}
+          .configValue=${"theme"}
+          .label=${`${this.hass!.localize(
+            "ui.panel.lovelace.editor.card.generic.theme"
+          )} (${this.hass!.localize(
+            "ui.panel.lovelace.editor.card.config.optional"
+          )})`}
+          @value-changed=${this._valueChanged}
+        ></ha-theme-picker>
       </div>
     `;
   }

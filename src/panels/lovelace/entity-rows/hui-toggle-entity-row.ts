@@ -1,8 +1,8 @@
-import { html, LitElement, PropertyValues, TemplateResult } from "lit";
+import { html, LitElement, PropertyValues, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators";
 import { computeStateDisplay } from "../../../common/entity/compute_state_display";
 import "../../../components/entity/ha-entity-toggle";
-import { UNAVAILABLE_STATES } from "../../../data/entity";
+import { isUnavailableState } from "../../../data/entity";
 import { HomeAssistant } from "../../../types";
 import { hasConfigOrEntityChanged } from "../common/has-changed";
 import "../components/hui-generic-entity-row";
@@ -26,9 +26,9 @@ class HuiToggleEntityRow extends LitElement implements LovelaceRow {
     return hasConfigOrEntityChanged(this, changedProps);
   }
 
-  protected render(): TemplateResult {
+  protected render() {
     if (!this._config || !this.hass) {
-      return html``;
+      return nothing;
     }
 
     const stateObj = this.hass.states[this._config.entity];
@@ -41,11 +41,18 @@ class HuiToggleEntityRow extends LitElement implements LovelaceRow {
       `;
     }
 
+    const showToggle =
+      stateObj.state === "on" ||
+      stateObj.state === "off" ||
+      isUnavailableState(stateObj.state);
+
     return html`
-      <hui-generic-entity-row .hass=${this.hass} .config=${this._config}>
-        ${stateObj.state === "on" ||
-        stateObj.state === "off" ||
-        UNAVAILABLE_STATES.includes(stateObj.state)
+      <hui-generic-entity-row
+        .hass=${this.hass}
+        .config=${this._config}
+        .catchInteraction=${!showToggle}
+      >
+        ${showToggle
           ? html`
               <ha-entity-toggle
                 .hass=${this.hass}
@@ -57,7 +64,9 @@ class HuiToggleEntityRow extends LitElement implements LovelaceRow {
                 ${computeStateDisplay(
                   this.hass!.localize,
                   stateObj,
-                  this.hass!.locale
+                  this.hass!.locale,
+                  this.hass.config,
+                  this.hass!.entities
                 )}
               </div>
             `}

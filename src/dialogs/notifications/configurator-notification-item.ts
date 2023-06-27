@@ -1,5 +1,5 @@
 import "@material/mwc-button";
-import { html, LitElement, TemplateResult } from "lit";
+import { html, LitElement, nothing } from "lit";
 import { customElement, property } from "lit/decorators";
 import { fireEvent } from "../../common/dom/fire_event";
 import { computeStateDisplay } from "../../common/entity/compute_state_display";
@@ -14,9 +14,9 @@ export class HuiConfiguratorNotificationItem extends LitElement {
 
   @property() public notification?: PersitentNotificationEntity;
 
-  protected render(): TemplateResult {
+  protected render() {
     if (!this.hass || !this.notification) {
-      return html``;
+      return nothing;
     }
 
     return html`
@@ -33,11 +33,13 @@ export class HuiConfiguratorNotificationItem extends LitElement {
           )}
         </div>
 
-        <mwc-button slot="actions" @click="${this._handleClick}"
+        <mwc-button slot="actions" @click=${this._handleClick}
           >${computeStateDisplay(
             this.hass.localize,
             this.notification,
-            this.hass.locale
+            this.hass.locale,
+            this.hass.config,
+            this.hass.entities
           )}</mwc-button
         >
       </notification-item-template>

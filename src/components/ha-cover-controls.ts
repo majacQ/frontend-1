@@ -1,115 +1,90 @@
-import type { HassEntity } from "home-assistant-js-websocket";
-import {
-  css,
-  CSSResultGroup,
-  html,
-  LitElement,
-  PropertyValues,
-  TemplateResult,
-} from "lit";
-import { customElement, property, state } from "lit/decorators";
+import { mdiStop } from "@mdi/js";
+import { css, CSSResultGroup, html, LitElement, nothing } from "lit";
+import { customElement, property } from "lit/decorators";
 import { classMap } from "lit/directives/class-map";
 import { computeCloseIcon, computeOpenIcon } from "../common/entity/cover_icon";
-import { UNAVAILABLE } from "../data/entity";
+import { supportsFeature } from "../common/entity/supports-feature";
+import {
+  canClose,
+  canOpen,
+  canStop,
+  CoverEntity,
+  CoverEntityFeature,
+} from "../data/cover";
 import type { HomeAssistant } from "../types";
-import CoverEntity from "../util/cover-model";
 import "./ha-icon-button";
 
 @customElement("ha-cover-controls")
 class HaCoverControls extends LitElement {
   @property({ attribute: false }) public hass!: HomeAssistant;
 
-  @property({ attribute: false }) public stateObj!: HassEntity;
+  @property({ attribute: false }) public stateObj!: CoverEntity;
 
-  @state() private _entityObj?: CoverEntity;
-
-  public willUpdate(changedProperties: PropertyValues): void {
-    super.willUpdate(changedProperties);
-
-    if (changedProperties.has("stateObj")) {
-      this._entityObj = new CoverEntity(this.hass, this.stateObj);
-    }
-  }
-
-  protected render(): TemplateResult {
-    if (!this._entityObj) {
-      return html``;
+  protected render() {
+    if (!this.stateObj) {
+      return nothing;
     }
 
     return html`
       <div class="state">
         <ha-icon-button
           class=${classMap({
-            hidden: !this._entityObj.supportsOpen,
+            hidden: !supportsFeature(this.stateObj, CoverEntityFeature.OPEN),
           })}
           .label=${this.hass.localize(
-            "ui.dialogs.more_info_control.open_cover"
+            "ui.dialogs.more_info_control.cover.open_cover"
           )}
-          .icon=${computeOpenIcon(this.stateObj)}
           @click=${this._onOpenTap}
-          .disabled=${this._computeOpenDisabled()}
-        ></ha-icon-button>
+          .disabled=${!canOpen(this.stateObj)}
+          .path=${computeOpenIcon(this.stateObj)}
+        >
+        </ha-icon-button>
         <ha-icon-button
           class=${classMap({
-            hidden: !this._entityObj.supportsStop,
+            hidden: !supportsFeature(this.stateObj, CoverEntityFeature.STOP),
           })}
           .label=${this.hass.localize(
-            "ui.dialogs.more_info_control.stop_cover"
+            "ui.dialogs.more_info_control.cover.stop_cover"
           )}
-          icon="hass:stop"
+          .path=${mdiStop}
           @click=${this._onStopTap}
-          .disabled=${this.stateObj.state === UNAVAILABLE}
+          .disabled=${!canStop(this.stateObj)}
         ></ha-icon-button>
         <ha-icon-button
           class=${classMap({
-            hidden: !this._entityObj.supportsClose,
+            hidden: !supportsFeature(this.stateObj, CoverEntityFeature.CLOSE),
           })}
           .label=${this.hass.localize(
-            "ui.dialogs.more_info_control.close_cover"
+            "ui.dialogs.more_info_control.cover.close_cover"
           )}
-          .icon=${computeCloseIcon(this.stateObj)}
           @click=${this._onCloseTap}
-          .disabled=${this._computeClosedDisabled()}
-        ></ha-icon-button>
+          .disabled=${!canClose(this.stateObj)}
+          .path=${computeCloseIcon(this.stateObj)}
+        >
+        </ha-icon-button>
       </div>
     `;
   }
 
-  private _computeOpenDisabled(): boolean {
-    if (this.stateObj.state === UNAVAILABLE) {
-      return true;
-    }
-    const assumedState = this.stateObj.attributes.assumed_state === true;
-    return (
-      (this._entityObj.isFullyOpen || this._entityObj.isOpening) &&
-      !assumedState
-    );
-  }
-
-  private _computeClosedDisabled(): boolean {
-    if (this.stateObj.state === UNAVAILABLE) {
-      return true;
-    }
-    const assumedState = this.stateObj.attributes.assumed_state === true;
-    return (
-      (this._entityObj.isFullyClosed || this._entityObj.isClosing) &&
-      !assumedState
-    );
-  }
-
   private _onOpenTap(ev): void {
     ev.stopPropagation();
-    this._entityObj.openCover();
+    this.hass.callService("cover", "open_cover", {
+      entity_id: this.stateObj.entity_id,
+    });
   }
 
   private _onCloseTap(ev): void {
     ev.stopPropagation();
-    this._entityObj.closeCover();
+    this.hass.callService("cover", "close_cover", {
+      entity_id: this.stateObj.entity_id,
+    });
   }
 
   private _onStopTap(ev): void {
     ev.stopPropagation();
-    this._entityObj.stopCover();
+    this.hass.callService("cover", "stop_cover", {
+      entity_id: this.stateObj.entity_id,
+    });
   }
 
   static get styles(): CSSResultGroup {

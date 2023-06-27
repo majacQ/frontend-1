@@ -4,7 +4,7 @@ import {
   html,
   LitElement,
   PropertyValues,
-  TemplateResult,
+  nothing,
 } from "lit";
 import { customElement, property } from "lit/decorators";
 import { classMap } from "lit/directives/class-map";
@@ -21,7 +21,8 @@ import { PictureHeaderFooterConfig } from "./types";
 @customElement("hui-picture-header-footer")
 export class HuiPictureHeaderFooter
   extends LitElement
-  implements LovelaceHeaderFooter {
+  implements LovelaceHeaderFooter
+{
   public static getStubConfig(): Record<string, unknown> {
     return {
       image:
@@ -32,6 +33,8 @@ export class HuiPictureHeaderFooter
   }
 
   @property({ attribute: false }) public hass?: HomeAssistant;
+
+  @property() public type!: "header" | "footer";
 
   @property() protected _config?: PictureHeaderFooterConfig;
 
@@ -54,9 +57,9 @@ export class HuiPictureHeaderFooter
     return true;
   }
 
-  protected render(): TemplateResult {
+  protected render() {
     if (!this._config || !this.hass) {
-      return html``;
+      return nothing;
     }
 
     const clickable = Boolean(
@@ -65,16 +68,17 @@ export class HuiPictureHeaderFooter
 
     return html`
       <img
+        alt=${this._config!.alt_text}
         @action=${this._handleAction}
         .actionHandler=${actionHandler({
           hasHold: hasAction(this._config!.hold_action),
           hasDoubleClick: hasAction(this._config!.double_tap_action),
         })}
         tabindex=${ifDefined(clickable ? 0 : undefined)}
-        class="${classMap({
+        class=${classMap({
           clickable,
-        })}"
-        src="${this.hass.hassUrl(this._config.image)}"
+        })}
+        src=${this.hass.hassUrl(this._config.image)}
       />
     `;
   }

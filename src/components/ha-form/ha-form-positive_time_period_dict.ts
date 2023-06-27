@@ -1,17 +1,17 @@
 import { html, LitElement, TemplateResult } from "lit";
 import { customElement, property, query } from "lit/decorators";
-import "../ha-time-input";
-import { HaFormElement, HaFormTimeData, HaFormTimeSchema } from "./ha-form";
+import "../ha-duration-input";
+import { HaFormElement, HaFormTimeData, HaFormTimeSchema } from "./types";
 
 @customElement("ha-form-positive_time_period_dict")
 export class HaFormTimePeriod extends LitElement implements HaFormElement {
-  @property() public schema!: HaFormTimeSchema;
+  @property({ attribute: false }) public schema!: HaFormTimeSchema;
 
-  @property() public data!: HaFormTimeData;
+  @property({ attribute: false }) public data!: HaFormTimeData;
 
   @property() public label!: string;
 
-  @property() public suffix!: string;
+  @property({ type: Boolean }) public disabled = false;
 
   @query("ha-time-input", true) private _input?: HTMLElement;
 
@@ -23,11 +23,12 @@ export class HaFormTimePeriod extends LitElement implements HaFormElement {
 
   protected render(): TemplateResult {
     return html`
-      <ha-time-input
+      <ha-duration-input
         .label=${this.label}
-        .required=${this.schema.required}
+        ?required=${this.schema.required}
         .data=${this.data}
-      ></ha-time-input>
+        .disabled=${this.disabled}
+      ></ha-duration-input>
     `;
   }
 }

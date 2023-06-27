@@ -1,36 +1,51 @@
-import "@polymer/paper-input/paper-input";
-import { css, CSSResultGroup, html, LitElement, TemplateResult } from "lit";
+import { html, LitElement, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators";
-import { assert, number, object, optional, string } from "superstruct";
+import memoizeOne from "memoize-one";
+import {
+  array,
+  assert,
+  assign,
+  boolean,
+  number,
+  object,
+  optional,
+  string,
+} from "superstruct";
 import { fireEvent } from "../../../../common/dom/fire_event";
-import { computeRTLDirection } from "../../../../common/util/compute_rtl";
-import "../../../../components/ha-formfield";
-import "../../../../components/ha-switch";
-import { HomeAssistant } from "../../../../types";
-import { GaugeCardConfig, SeverityConfig } from "../../cards/types";
-import "../../components/hui-entity-editor";
-import "../../components/hui-theme-select-editor";
-import { LovelaceCardEditor } from "../../types";
-import { EditorTarget, EntitiesEditorEvent } from "../types";
-import { configElementStyle } from "./config-elements-style";
+import "../../../../components/ha-form/ha-form";
+import type { SchemaUnion } from "../../../../components/ha-form/types";
+import type { HomeAssistant } from "../../../../types";
+import type { GaugeCardConfig } from "../../cards/types";
+import type { LovelaceCardEditor } from "../../types";
+import { baseLovelaceCardConfig } from "../structs/base-card-struct";
+import { DEFAULT_MIN, DEFAULT_MAX } from "../../cards/hui-gauge-card";
 
-const cardConfigStruct = object({
-  type: string(),
-  name: optional(string()),
-  entity: optional(string()),
-  unit: optional(string()),
-  min: optional(number()),
-  max: optional(number()),
-  severity: optional(object()),
-  theme: optional(string()),
+const gaugeSegmentStruct = object({
+  from: number(),
+  color: string(),
+  label: optional(string()),
 });
 
-const includeDomains = ["counter", "input_number", "number", "sensor"];
+const cardConfigStruct = assign(
+  baseLovelaceCardConfig,
+  object({
+    name: optional(string()),
+    entity: optional(string()),
+    unit: optional(string()),
+    min: optional(number()),
+    max: optional(number()),
+    severity: optional(object()),
+    theme: optional(string()),
+    needle: optional(boolean()),
+    segments: optional(array(gaugeSegmentStruct)),
+  })
+);
 
 @customElement("hui-gauge-card-editor")
 export class HuiGaugeCardEditor
   extends LitElement
-  implements LovelaceCardEditor {
+  implements LovelaceCardEditor
+{
   @property({ attribute: false }) public hass?: HomeAssistant;
 
   @state() private _config?: GaugeCardConfig;
@@ -40,237 +55,168 @@ export class HuiGaugeCardEditor
     this._config = config;
   }
 
-  get _name(): string {
-    return this._config!.name || "";
-  }
+  private _schema = memoizeOne(
+    (showSeverity: boolean) =>
+      [
+        {
+          name: "entity",
+          selector: {
+            entity: {
+              domain: ["counter", "input_number", "number", "sensor"],
+            },
+          },
+        },
+        {
+          name: "",
+          type: "grid",
+          schema: [
+            { name: "name", selector: { text: {} } },
+            { name: "unit", selector: { text: {} } },
+          ],
+        },
+        { name: "theme", selector: { theme: {} } },
+        {
+          name: "",
+          type: "grid",
+          schema: [
+            {
+              name: "min",
+              default: DEFAULT_MIN,
+              selector: { number: { mode: "box" } },
+            },
+            {
+              name: "max",
+              default: DEFAULT_MAX,
+              selector: { number: { mode: "box" } },
+            },
+          ],
+        },
+        {
+          name: "",
+          type: "grid",
+          schema: [
+            { name: "needle", selector: { boolean: {} } },
+            { name: "show_severity", selector: { boolean: {} } },
+          ],
+        },
+        ...(showSeverity
+          ? ([
+              {
+                name: "severity",
+                type: "grid",
+                schema: [
+                  {
+                    name: "green",
+                    selector: { number: { mode: "box" } },
+                  },
+                  {
+                    name: "yellow",
+                    selector: { number: { mode: "box" } },
+                  },
+                  {
+                    name: "red",
+                    selector: { number: { mode: "box" } },
+                  },
+                ],
+              },
+            ] as const)
+          : []),
+      ] as const
+  );
 
-  get _entity(): string {
-    return this._config!.entity || "";
-  }
-
-  get _unit(): string {
-    return this._config!.unit || "";
-  }
-
-  get _theme(): string {
-    return this._config!.theme || "";
-  }
-
-  get _min(): number {
-    return this._config!.min || 0;
-  }
-
-  get _max(): number {
-    return this._config!.max || 100;
-  }
-
-  get _severity(): SeverityConfig | undefined {
-    return this._config!.severity || undefined;
-  }
-
-  protected render(): TemplateResult {
+  protected render() {
     if (!this.hass || !this._config) {
-      return html``;
+      return nothing;
     }
 
+    const schema = this._schema(this._config!.severity !== undefined);
+    const data = {
+      show_severity: this._config!.severity !== undefined,
+      ...this._config,
+    };
+
     return html`
-      <div class="card-config">
-        <ha-entity-picker
-          .label="${this.hass.localize(
-            "ui.panel.lovelace.editor.card.generic.entity"
-          )} (${this.hass.localize(
-            "ui.panel.lovelace.editor.card.config.required"
-          )})"
-          .hass=${this.hass}
-          .value="${this._entity}"
-          .configValue=${"entity"}
-          .includeDomains=${includeDomains}
-          @change="${this._valueChanged}"
-          allow-custom-entity
-        ></ha-entity-picker>
-        <paper-input
-          .label="${this.hass.localize(
-            "ui.panel.lovelace.editor.card.generic.name"
-          )} (${this.hass.localize(
-            "ui.panel.lovelace.editor.card.config.optional"
-          )})"
-          .value="${this._name}"
-          .configValue=${"name"}
-          @value-changed="${this._valueChanged}"
-        ></paper-input>
-        <paper-input
-          .label="${this.hass.localize(
-            "ui.panel.lovelace.editor.card.generic.unit"
-          )} (${this.hass.localize(
-            "ui.panel.lovelace.editor.card.config.optional"
-          )})"
-          .value=${this._unit}
-          .configValue=${"unit"}
-          @value-changed=${this._valueChanged}
-        ></paper-input>
-        <hui-theme-select-editor
-          .hass=${this.hass}
-          .value="${this._theme}"
-          .configValue="${"theme"}"
-          @value-changed="${this._valueChanged}"
-        ></hui-theme-select-editor>
-        <paper-input
-          type="number"
-          .label="${this.hass.localize(
-            "ui.panel.lovelace.editor.card.generic.minimum"
-          )} (${this.hass.localize(
-            "ui.panel.lovelace.editor.card.config.optional"
-          )})"
-          .value="${this._min}"
-          .configValue=${"min"}
-          @value-changed="${this._valueChanged}"
-        ></paper-input>
-        <paper-input
-          type="number"
-          .label="${this.hass.localize(
-            "ui.panel.lovelace.editor.card.generic.maximum"
-          )} (${this.hass.localize(
-            "ui.panel.lovelace.editor.card.config.optional"
-          )})"
-          .value="${this._max}"
-          .configValue=${"max"}
-          @value-changed="${this._valueChanged}"
-        ></paper-input>
-        <ha-formfield
-          .label=${this.hass.localize(
-            "ui.panel.lovelace.editor.card.gauge.severity.define"
-          )}
-          .dir=${computeRTLDirection(this.hass)}
-        >
-          <ha-switch
-            .checked="${this._config!.severity !== undefined}"
-            @change="${this._toggleSeverity}"
-          ></ha-switch
-        ></ha-formfield>
-        ${this._config!.severity !== undefined
-          ? html`
-              <paper-input
-                type="number"
-                .label="${this.hass.localize(
-                  "ui.panel.lovelace.editor.card.gauge.severity.green"
-                )} (${this.hass.localize(
-              "ui.panel.lovelace.editor.card.config.required"
-            )})"
-                .value="${this._severity ? this._severity.green : 0}"
-                .configValue=${"green"}
-                @value-changed="${this._severityChanged}"
-              ></paper-input>
-              <paper-input
-                type="number"
-                .label="${this.hass.localize(
-                  "ui.panel.lovelace.editor.card.gauge.severity.yellow"
-                )} (${this.hass.localize(
-              "ui.panel.lovelace.editor.card.config.required"
-            )})"
-                .value="${this._severity ? this._severity.yellow : 0}"
-                .configValue=${"yellow"}
-                @value-changed="${this._severityChanged}"
-              ></paper-input>
-              <paper-input
-                type="number"
-                .label="${this.hass.localize(
-                  "ui.panel.lovelace.editor.card.gauge.severity.red"
-                )} (${this.hass.localize(
-              "ui.panel.lovelace.editor.card.config.required"
-            )})"
-                .value="${this._severity ? this._severity.red : 0}"
-                .configValue=${"red"}
-                @value-changed="${this._severityChanged}"
-              ></paper-input>
-          </div>
-          `
-          : ""}
-      </div>
+      <ha-form
+        .hass=${this.hass}
+        .data=${data}
+        .schema=${schema}
+        .computeLabel=${this._computeLabelCallback}
+        @value-changed=${this._valueChanged}
+      ></ha-form>
     `;
   }
 
-  static get styles(): CSSResultGroup {
-    return [
-      configElementStyle,
-      css`
-        .severity {
-          display: none;
-          width: 100%;
-          padding-left: 16px;
-          flex-direction: row;
-          flex-wrap: wrap;
-        }
-        .severity > * {
-          flex: 1 0 30%;
-          padding-right: 4px;
-        }
-        ha-switch[checked] ~ .severity {
-          display: flex;
-        }
-      `,
-    ];
-  }
+  private _valueChanged(ev: CustomEvent): void {
+    let config = ev.detail.value;
 
-  private _toggleSeverity(ev: EntitiesEditorEvent): void {
-    if (!this._config || !this.hass) {
-      return;
-    }
-
-    if ((ev.target as EditorTarget).checked) {
-      this._config = {
-        ...this._config,
+    if (config.show_severity) {
+      config = {
+        ...config,
         severity: {
-          green: 0,
-          yellow: 0,
-          red: 0,
+          green: config.green || config.severity?.green || 0,
+          yellow: config.yellow || config.severity?.yellow || 0,
+          red: config.red || config.severity?.red || 0,
         },
       };
-    } else {
-      this._config = { ...this._config };
-      delete this._config.severity;
+    } else if (!config.show_severity && config.severity) {
+      delete config.severity;
     }
-    fireEvent(this, "config-changed", { config: this._config });
+
+    delete config.show_severity;
+    delete config.green;
+    delete config.yellow;
+    delete config.red;
+
+    fireEvent(this, "config-changed", { config });
   }
 
-  private _severityChanged(ev: EntitiesEditorEvent): void {
-    if (!this._config || !this.hass) {
-      return;
+  private _computeLabelCallback = (
+    schema: SchemaUnion<ReturnType<typeof this._schema>>
+  ) => {
+    switch (schema.name) {
+      case "name":
+        return this.hass!.localize(
+          "ui.panel.lovelace.editor.card.generic.name"
+        );
+      case "entity":
+        return `${this.hass!.localize(
+          "ui.panel.lovelace.editor.card.generic.entity"
+        )} (${this.hass!.localize(
+          "ui.panel.lovelace.editor.card.config.required"
+        )})`;
+      case "max":
+        return this.hass!.localize(
+          "ui.panel.lovelace.editor.card.generic.maximum"
+        );
+      case "min":
+        return this.hass!.localize(
+          "ui.panel.lovelace.editor.card.generic.minimum"
+        );
+      case "show_severity":
+        return this.hass!.localize(
+          "ui.panel.lovelace.editor.card.gauge.severity.define"
+        );
+      case "needle":
+        return this.hass!.localize(
+          "ui.panel.lovelace.editor.card.gauge.needle_gauge"
+        );
+      case "theme":
+        return `${this.hass!.localize(
+          "ui.panel.lovelace.editor.card.generic.theme"
+        )} (${this.hass!.localize(
+          "ui.panel.lovelace.editor.card.config.optional"
+        )})`;
+      case "unit":
+        return this.hass!.localize(
+          "ui.panel.lovelace.editor.card.generic.unit"
+        );
+      default:
+        // "green" | "yellow" | "red"
+        return this.hass!.localize(
+          `ui.panel.lovelace.editor.card.gauge.severity.${schema.name}`
+        );
     }
-    const target = ev.target! as EditorTarget;
-    const severity = {
-      ...this._config.severity,
-      [target.configValue!]: Number(target.value),
-    };
-    this._config = {
-      ...this._config,
-      severity,
-    };
-    fireEvent(this, "config-changed", { config: this._config });
-  }
-
-  private _valueChanged(ev: EntitiesEditorEvent): void {
-    if (!this._config || !this.hass) {
-      return;
-    }
-    const target = ev.target! as EditorTarget;
-
-    if (target.configValue) {
-      if (
-        target.value === "" ||
-        (target.type === "number" && isNaN(Number(target.value)))
-      ) {
-        this._config = { ...this._config };
-        delete this._config[target.configValue!];
-      } else {
-        let value: any = target.value;
-        if (target.type === "number") {
-          value = Number(value);
-        }
-        this._config = { ...this._config, [target.configValue!]: value };
-      }
-    }
-    fireEvent(this, "config-changed", { config: this._config });
-  }
+  };
 }
 
 declare global {

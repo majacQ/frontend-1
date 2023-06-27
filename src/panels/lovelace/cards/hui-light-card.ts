@@ -6,7 +6,7 @@ import {
   html,
   LitElement,
   PropertyValues,
-  TemplateResult,
+  nothing,
 } from "lit";
 import { customElement, property, state } from "lit/decorators";
 import { classMap } from "lit/directives/class-map";
@@ -15,11 +15,11 @@ import { applyThemesOnElement } from "../../../common/dom/apply_themes_on_elemen
 import { fireEvent } from "../../../common/dom/fire_event";
 import { computeStateDisplay } from "../../../common/entity/compute_state_display";
 import { computeStateName } from "../../../common/entity/compute_state_name";
-import { stateIcon } from "../../../common/entity/state_icon";
 import "../../../components/ha-card";
 import "../../../components/ha-icon-button";
-import { UNAVAILABLE, UNAVAILABLE_STATES } from "../../../data/entity";
-import { LightEntity, lightSupportsDimming } from "../../../data/light";
+import "../../../components/ha-state-icon";
+import { isUnavailableState, UNAVAILABLE } from "../../../data/entity";
+import { LightEntity, lightSupportsBrightness } from "../../../data/light";
 import { ActionHandlerEvent } from "../../../data/lovelace";
 import { HomeAssistant } from "../../../types";
 import { actionHandler } from "../common/directives/action-handler-directive";
@@ -30,6 +30,7 @@ import { hasConfigOrEntityChanged } from "../common/has-changed";
 import { createEntityNotFoundWarning } from "../components/hui-warning";
 import { LovelaceCard, LovelaceCardEditor } from "../types";
 import { LightCardConfig } from "./types";
+import { stateColorBrightness } from "../../../common/entity/state_color";
 
 @customElement("hui-light-card")
 export class HuiLightCard extends LitElement implements LovelaceCard {
@@ -78,9 +79,9 @@ export class HuiLightCard extends LitElement implements LovelaceCard {
     };
   }
 
-  protected render(): TemplateResult {
+  protected render() {
     if (!this.hass || !this._config) {
-      return html``;
+      return nothing;
     }
 
     const stateObj = this.hass.states[this._config!.entity] as LightEntity;
@@ -93,19 +94,23 @@ export class HuiLightCard extends LitElement implements LovelaceCard {
       `;
     }
 
-    const brightness =
-      Math.round((stateObj.attributes.brightness / 255) * 100) || 0;
+    const brightness = Math.round(
+      ((stateObj.attributes.brightness || 0) / 255) * 100
+    );
+
+    const name = this._config.name ?? computeStateName(stateObj);
 
     return html`
       <ha-card>
-        <mwc-icon-button
+        <ha-icon-button
           class="more-info"
-          label="Open more info"
+          .label=${this.hass!.localize(
+            "ui.panel.lovelace.cards.show_more_info"
+          )}
+          .path=${mdiDotsVertical}
           @click=${this._handleMoreInfo}
           tabindex="0"
-        >
-          <ha-svg-icon .path=${mdiDotsVertical}></ha-svg-icon>
-        </mwc-icon-button>
+        ></ha-icon-button>
 
         <div class="content">
           <div id="controls">
@@ -114,23 +119,22 @@ export class HuiLightCard extends LitElement implements LovelaceCard {
                 min="1"
                 max="100"
                 .value=${brightness}
-                .disabled=${UNAVAILABLE_STATES.includes(stateObj.state)}
+                .disabled=${isUnavailableState(stateObj.state)}
                 @value-changing=${this._dragEvent}
                 @value-changed=${this._setBrightness}
                 style=${styleMap({
-                  visibility: lightSupportsDimming(stateObj)
+                  visibility: lightSupportsBrightness(stateObj)
                     ? "visible"
                     : "hidden",
                 })}
               ></round-slider>
               <ha-icon-button
                 class="light-button ${classMap({
-                  "slider-center": lightSupportsDimming(stateObj),
+                  "slider-center": lightSupportsBrightness(stateObj),
                   "state-on": stateObj.state === "on",
                   "state-unavailable": stateObj.state === UNAVAILABLE,
                 })}"
-                .icon=${this._config.icon || stateIcon(stateObj)}
-                .disabled=${UNAVAILABLE_STATES.includes(stateObj.state)}
+                .disabled=${isUnavailableState(stateObj.state)}
                 style=${styleMap({
                   filter: this._computeBrightness(stateObj),
                   color: this._computeColor(stateObj),
@@ -141,23 +145,30 @@ export class HuiLightCard extends LitElement implements LovelaceCard {
                   hasDoubleClick: hasAction(this._config!.double_tap_action),
                 })}
                 tabindex="0"
-              ></ha-icon-button>
+              >
+                <ha-state-icon
+                  .icon=${this._config.icon}
+                  .state=${stateObj}
+                ></ha-state-icon>
+              </ha-icon-button>
             </div>
           </div>
 
-          <div id="info">
-            ${UNAVAILABLE_STATES.includes(stateObj.state)
+          <div id="info" .title=${name}>
+            ${isUnavailableState(stateObj.state)
               ? html`
                   <div>
                     ${computeStateDisplay(
                       this.hass.localize,
                       stateObj,
-                      this.hass.locale
+                      this.hass.locale,
+                      this.hass.config,
+                      this.hass.entities
                     )}
                   </div>
                 `
               : html` <div class="brightness">%</div> `}
-            ${this._config.name || computeStateName(stateObj)}
+            ${name}
           </div>
         </div>
       </ha-card>
@@ -229,8 +240,7 @@ export class HuiLightCard extends LitElement implements LovelaceCard {
     if (stateObj.state === "off" || !stateObj.attributes.brightness) {
       return "";
     }
-    const brightness = stateObj.attributes.brightness;
-    return `brightness(${(brightness + 245) / 5}%)`;
+    return stateColorBrightness(stateObj);
   }
 
   private _computeColor(stateObj: LightEntity): string {
@@ -269,9 +279,12 @@ export class HuiLightCard extends LitElement implements LovelaceCard {
         cursor: pointer;
         top: 0;
         right: 0;
+        inset-inline-start: initial;
+        inset-inline-end: 0;
         border-radius: 100%;
         color: var(--secondary-text-color);
         z-index: 1;
+        direction: var(--direction);
       }
 
       .content {
@@ -297,7 +310,7 @@ export class HuiLightCard extends LitElement implements LovelaceCard {
       }
 
       round-slider {
-        --round-slider-path-color: var(--disabled-text-color);
+        --round-slider-path-color: var(--slider-track-color);
         --round-slider-bar-color: var(--primary-color);
         padding-bottom: 10%;
       }
@@ -318,11 +331,11 @@ export class HuiLightCard extends LitElement implements LovelaceCard {
       }
 
       .light-button.state-on {
-        color: var(--paper-item-icon-active-color, #fdd835);
+        color: var(--state-light-active-color);
       }
 
       .light-button.state-unavailable {
-        color: var(--state-icon-unavailable-color);
+        color: var(--state-unavailable-color);
       }
 
       #info {

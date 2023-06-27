@@ -59,7 +59,7 @@ export class ZHAClustersDataTable extends LitElement {
               title: "ID",
               template: (id: number) => html` ${formatAsPaddedHex(id)} `,
               sortable: true,
-              width: "15%",
+              width: "25%",
             },
             endpoint_id: {
               title: "Endpoint ID",
@@ -76,6 +76,7 @@ export class ZHAClustersDataTable extends LitElement {
   protected render(): TemplateResult {
     return html`
       <ha-data-table
+        .hass=${this.hass}
         .columns=${this._columns(this.narrow)}
         .data=${this._clusters(this.clusters)}
         .id=${"cluster_id"}

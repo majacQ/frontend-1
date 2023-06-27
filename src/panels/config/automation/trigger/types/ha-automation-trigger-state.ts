@@ -1,94 +1,253 @@
-import "@polymer/paper-input/paper-input";
-import { html, LitElement } from "lit";
+import { html, LitElement, PropertyValues } from "lit";
 import { customElement, property } from "lit/decorators";
-import "../../../../../components/entity/ha-entity-attribute-picker";
-import "../../../../../components/entity/ha-entity-picker";
-import { ForDict, StateTrigger } from "../../../../../data/automation";
-import { HomeAssistant } from "../../../../../types";
 import {
-  handleChangeEvent,
-  TriggerElement,
-} from "../ha-automation-trigger-row";
+  array,
+  assert,
+  assign,
+  literal,
+  nullable,
+  number,
+  object,
+  optional,
+  string,
+  union,
+} from "superstruct";
+import memoizeOne from "memoize-one";
+import type { LocalizeFunc } from "../../../../../common/translations/localize";
+import { ensureArray } from "../../../../../common/array/ensure-array";
+import { fireEvent } from "../../../../../common/dom/fire_event";
+import { hasTemplate } from "../../../../../common/string/has-template";
+import { StateTrigger } from "../../../../../data/automation";
+import { HomeAssistant } from "../../../../../types";
+import { baseTriggerStruct, forDictStruct } from "../../structs";
+import { TriggerElement } from "../ha-automation-trigger-row";
+import "../../../../../components/ha-form/ha-form";
+import { createDurationData } from "../../../../../common/datetime/create_duration_data";
+import type { SchemaUnion } from "../../../../../components/ha-form/types";
+
+const stateTriggerStruct = assign(
+  baseTriggerStruct,
+  object({
+    alias: optional(string()),
+    platform: literal("state"),
+    entity_id: optional(union([string(), array(string())])),
+    attribute: optional(string()),
+    from: optional(nullable(string())),
+    to: optional(nullable(string())),
+    for: optional(union([number(), string(), forDictStruct])),
+  })
+);
+
+const ANY_STATE_VALUE = "__ANY_STATE_IGNORE_ATTRIBUTES__";
 
 @customElement("ha-automation-trigger-state")
 export class HaStateTrigger extends LitElement implements TriggerElement {
   @property({ attribute: false }) public hass!: HomeAssistant;
 
-  @property() public trigger!: StateTrigger;
+  @property({ attribute: false }) public trigger!: StateTrigger;
+
+  @property({ type: Boolean }) public disabled = false;
 
   public static get defaultConfig() {
-    return { entity_id: "" };
+    return { entity_id: [] };
+  }
+
+  private _schema = memoizeOne(
+    (localize: LocalizeFunc, entityId, attribute) =>
+      [
+        {
+          name: "entity_id",
+          required: true,
+          selector: { entity: { multiple: true } },
+        },
+        {
+          name: "attribute",
+          selector: {
+            attribute: {
+              entity_id: entityId ? entityId[0] : undefined,
+              hide_attributes: [
+                "access_token",
+                "available_modes",
+                "code_arm_required",
+                "code_format",
+                "color_modes",
+                "device_class",
+                "editable",
+                "effect_list",
+                "entity_id",
+                "entity_picture",
+                "fan_modes",
+                "fan_speed_list",
+                "friendly_name",
+                "frontend_stream_type",
+                "has_date",
+                "has_time",
+                "hvac_modes",
+                "icon",
+                "id",
+                "max_color_temp_kelvin",
+                "max_mireds",
+                "max_temp",
+                "max",
+                "min_color_temp_kelvin",
+                "min_mireds",
+                "min_temp",
+                "min",
+                "mode",
+                "operation_list",
+                "options",
+                "percentage_step",
+                "precipitation_unit",
+                "preset_modes",
+                "pressure_unit",
+                "sound_mode_list",
+                "source_list",
+                "state_class",
+                "step",
+                "supported_color_modes",
+                "supported_features",
+                "swing_modes",
+                "target_temp_step",
+                "temperature_unit",
+                "token",
+                "unit_of_measurement",
+                "visibility_unit",
+                "wind_speed_unit",
+              ],
+            },
+          },
+        },
+        {
+          name: "from",
+          selector: {
+            state: {
+              extra_options: (attribute
+                ? []
+                : [
+                    {
+                      label: localize(
+                        "ui.panel.config.automation.editor.triggers.type.state.any_state_ignore_attributes"
+                      ),
+                      value: ANY_STATE_VALUE,
+                    },
+                  ]) as any,
+              entity_id: entityId ? entityId[0] : undefined,
+              attribute: attribute,
+            },
+          },
+        },
+        {
+          name: "to",
+          selector: {
+            state: {
+              extra_options: (attribute
+                ? []
+                : [
+                    {
+                      label: localize(
+                        "ui.panel.config.automation.editor.triggers.type.state.any_state_ignore_attributes"
+                      ),
+                      value: ANY_STATE_VALUE,
+                    },
+                  ]) as any,
+              entity_id: entityId ? entityId[0] : undefined,
+              attribute: attribute,
+            },
+          },
+        },
+        { name: "for", selector: { duration: {} } },
+      ] as const
+  );
+
+  public shouldUpdate(changedProperties: PropertyValues) {
+    if (!changedProperties.has("trigger")) {
+      return true;
+    }
+    if (
+      this.trigger.for &&
+      typeof this.trigger.for === "object" &&
+      this.trigger.for.milliseconds === 0
+    ) {
+      delete this.trigger.for.milliseconds;
+    }
+    // Check for templates in trigger. If found, revert to YAML mode.
+    if (this.trigger && hasTemplate(this.trigger)) {
+      fireEvent(
+        this,
+        "ui-mode-not-available",
+        Error(this.hass.localize("ui.errors.config.no_template_editor_support"))
+      );
+      return false;
+    }
+    try {
+      assert(this.trigger, stateTriggerStruct);
+    } catch (e: any) {
+      fireEvent(this, "ui-mode-not-available", e);
+      return false;
+    }
+    return true;
   }
 
   protected render() {
-    const { entity_id, attribute, to, from } = this.trigger;
-    let trgFor = this.trigger.for;
+    const trgFor = createDurationData(this.trigger.for);
 
-    if (
-      trgFor &&
-      ((trgFor as ForDict).hours ||
-        (trgFor as ForDict).minutes ||
-        (trgFor as ForDict).seconds)
-    ) {
-      // If the trigger was defined using the yaml dict syntax, convert it to
-      // the equivalent string format
-      let { hours = 0, minutes = 0, seconds = 0 } = trgFor as ForDict;
-      hours = hours.toString();
-      minutes = minutes.toString().padStart(2, "0");
-      seconds = seconds.toString().padStart(2, "0");
-
-      trgFor = `${hours}:${minutes}:${seconds}`;
+    const data = {
+      ...this.trigger,
+      entity_id: ensureArray(this.trigger.entity_id),
+      for: trgFor,
+    };
+    if (!data.attribute && data.to === null) {
+      data.to = ANY_STATE_VALUE;
     }
+    if (!data.attribute && data.from === null) {
+      data.from = ANY_STATE_VALUE;
+    }
+    const schema = this._schema(
+      this.hass.localize,
+      this.trigger.entity_id,
+      this.trigger.attribute
+    );
 
     return html`
-      <ha-entity-picker
-        .value=${entity_id}
-        @value-changed=${this._valueChanged}
-        .name=${"entity_id"}
+      <ha-form
         .hass=${this.hass}
-        allow-custom-entity
-      ></ha-entity-picker>
-      <ha-entity-attribute-picker
-        .hass=${this.hass}
-        .entityId=${entity_id}
-        .value=${attribute}
-        .name=${"attribute"}
-        .label=${this.hass.localize(
-          "ui.panel.config.automation.editor.triggers.type.state.attribute"
-        )}
+        .data=${data}
+        .schema=${schema}
         @value-changed=${this._valueChanged}
-        allow-custom-value
-      ></ha-entity-attribute-picker>
-      <paper-input
-        .label=${this.hass.localize(
-          "ui.panel.config.automation.editor.triggers.type.state.from"
-        )}
-        .name=${"from"}
-        .value=${from}
-        @value-changed=${this._valueChanged}
-      ></paper-input>
-      <paper-input
-        label=${this.hass.localize(
-          "ui.panel.config.automation.editor.triggers.type.state.to"
-        )}
-        .name=${"to"}
-        .value=${to}
-        @value-changed=${this._valueChanged}
-      ></paper-input>
-      <paper-input
-        .label=${this.hass.localize(
-          "ui.panel.config.automation.editor.triggers.type.state.for"
-        )}
-        .name=${"for"}
-        .value=${trgFor}
-        @value-changed=${this._valueChanged}
-      ></paper-input>
+        .computeLabel=${this._computeLabelCallback}
+        .disabled=${this.disabled}
+      ></ha-form>
     `;
   }
 
   private _valueChanged(ev: CustomEvent): void {
-    handleChangeEvent(this, ev);
+    ev.stopPropagation();
+    const newTrigger = ev.detail.value;
+
+    if (newTrigger.to === ANY_STATE_VALUE) {
+      newTrigger.to = newTrigger.attribute ? undefined : null;
+    }
+    if (newTrigger.from === ANY_STATE_VALUE) {
+      newTrigger.from = newTrigger.attribute ? undefined : null;
+    }
+
+    Object.keys(newTrigger).forEach((key) =>
+      newTrigger[key] === undefined || newTrigger[key] === ""
+        ? delete newTrigger[key]
+        : {}
+    );
+
+    fireEvent(this, "value-changed", { value: newTrigger });
   }
+
+  private _computeLabelCallback = (
+    schema: SchemaUnion<ReturnType<typeof this._schema>>
+  ): string =>
+    this.hass.localize(
+      schema.name === "entity_id"
+        ? "ui.components.entity.entity-picker.entity"
+        : `ui.panel.config.automation.editor.triggers.type.state.${schema.name}`
+    );
 }
 
 declare global {

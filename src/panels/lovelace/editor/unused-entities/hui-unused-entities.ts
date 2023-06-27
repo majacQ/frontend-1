@@ -5,7 +5,7 @@ import {
   html,
   LitElement,
   PropertyValues,
-  TemplateResult,
+  nothing,
 } from "lit";
 import { customElement, property, state } from "lit/decorators";
 import { classMap } from "lit/directives/class-map";
@@ -47,13 +47,13 @@ export class HuiUnusedEntities extends LitElement {
     }
   }
 
-  protected render(): TemplateResult {
+  protected render() {
     if (!this.hass || !this.lovelace) {
-      return html``;
+      return nothing;
     }
 
     if (this.lovelace.mode === "storage" && this.lovelace.editMode === false) {
-      return html``;
+      return nothing;
     }
 
     return html`
@@ -61,9 +61,9 @@ export class HuiUnusedEntities extends LitElement {
         ${!this.narrow
           ? html`
               <ha-card
-                header="${this.hass.localize(
+                header=${this.hass.localize(
                   "ui.panel.lovelace.unused_entities.title"
-                )}"
+                )}
               >
                 <div class="card-content">
                   ${this.hass.localize(
@@ -89,9 +89,9 @@ export class HuiUnusedEntities extends LitElement {
               icon: "",
               entity_id: entity,
               stateObj,
-              name: computeStateName(stateObj),
+              name: stateObj ? computeStateName(stateObj) : "Unavailable",
               domain: computeDomain(entity),
-              last_changed: stateObj!.last_changed,
+              last_changed: stateObj?.last_changed,
             };
           }) as DataTableRowData[]}
           @selected-changed=${this._handleSelectedChanged}
@@ -168,7 +168,6 @@ export class HuiUnusedEntities extends LitElement {
       }
       hui-entity-picker-table {
         flex-grow: 1;
-        margin-top: -20px;
       }
       .fab {
         position: sticky;

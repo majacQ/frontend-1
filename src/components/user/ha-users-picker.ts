@@ -1,12 +1,12 @@
 import { mdiClose } from "@mdi/js";
-import { css, CSSResultGroup, html, LitElement, TemplateResult } from "lit";
+import { css, CSSResultGroup, html, LitElement, nothing } from "lit";
 import { customElement, property } from "lit/decorators";
 import { guard } from "lit/directives/guard";
 import memoizeOne from "memoize-one";
 import { fireEvent } from "../../common/dom/fire_event";
 import { fetchUsers, User } from "../../data/user";
-import type { PolymerChangedEvent } from "../../polymer-types";
-import type { HomeAssistant } from "../../types";
+import type { ValueChangedEvent, HomeAssistant } from "../../types";
+import "../ha-icon-button";
 import "./ha-user-picker";
 
 @customElement("ha-users-picker")
@@ -33,9 +33,9 @@ class HaUsersPickerLight extends LitElement {
     }
   }
 
-  protected render(): TemplateResult {
+  protected render() {
     if (!this.hass || !this.users) {
-      return html``;
+      return nothing;
     }
 
     const notSelectedUsers = this._notSelectedUsers(this.users, this.value);
@@ -46,7 +46,7 @@ class HaUsersPickerLight extends LitElement {
             <div>
               <ha-user-picker
                 .label=${this.pickedUserLabel}
-                .noUserLabel=${this.hass?.localize(
+                .noUserLabel=${this.hass!.localize(
                   "ui.components.user-picker.remove_user"
                 )}
                 .index=${idx}
@@ -59,16 +59,23 @@ class HaUsersPickerLight extends LitElement {
                 )}
                 @value-changed=${this._userChanged}
               ></ha-user-picker>
-              <mwc-icon-button .userId=${user_id} @click=${this._removeUser}>
-                <ha-svg-icon .path=${mdiClose}></ha-svg-icon>
-              </mwc-icon-button>
+              <ha-icon-button
+                .userId=${user_id}
+                .label=${this.hass!.localize(
+                  "ui.components.user-picker.remove_user"
+                )}
+                .path=${mdiClose}
+                @click=${this._removeUser}
+              >
+                ></ha-icon-button
+              >
             </div>
           `
         )
       )}
       <ha-user-picker
-        .noUserLabel=${this.pickUserLabel ||
-        this.hass?.localize("ui.components.user-picker.add_user")}
+        .label=${this.pickUserLabel ||
+        this.hass!.localize("ui.components.user-picker.add_user")}
         .hass=${this.hass}
         .users=${notSelectedUsers}
         .disabled=${!notSelectedUsers?.length}
@@ -109,7 +116,7 @@ class HaUsersPickerLight extends LitElement {
     });
   }
 
-  private _userChanged(event: PolymerChangedEvent<string>) {
+  private _userChanged(event: ValueChangedEvent<string>) {
     event.stopPropagation();
     const index = (event.currentTarget as any).index;
     const newValue = event.detail.value;
@@ -122,7 +129,7 @@ class HaUsersPickerLight extends LitElement {
     this._updateUsers(newUsers);
   }
 
-  private async _addUser(event: PolymerChangedEvent<string>) {
+  private async _addUser(event: ValueChangedEvent<string>) {
     event.stopPropagation();
     const toAdd = event.detail.value;
     (event.currentTarget as any).value = "";

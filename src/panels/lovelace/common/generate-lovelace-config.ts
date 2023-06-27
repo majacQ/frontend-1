@@ -1,25 +1,31 @@
 import { HassEntities, HassEntity } from "home-assistant-js-websocket";
+import { SENSOR_ENTITIES } from "../../../common/const";
 import { computeDomain } from "../../../common/entity/compute_domain";
 import { computeStateDomain } from "../../../common/entity/compute_state_domain";
 import { computeStateName } from "../../../common/entity/compute_state_name";
 import { splitByGroups } from "../../../common/entity/split_by_groups";
-import { compare } from "../../../common/string/compare";
+import { stripPrefixFromEntityName } from "../../../common/entity/strip_prefix_from_entity_name";
+import { stringCompare } from "../../../common/string/compare";
 import { LocalizeFunc } from "../../../common/translations/localize";
-import type { AreaRegistryEntry } from "../../../data/area_registry";
-import type { DeviceRegistryEntry } from "../../../data/device_registry";
-import type { EntityRegistryEntry } from "../../../data/entity_registry";
+import {
+  EnergyPreferences,
+  GridSourceTypeEnergyPreference,
+} from "../../../data/energy";
 import { domainToName } from "../../../data/integration";
 import { LovelaceCardConfig, LovelaceViewConfig } from "../../../data/lovelace";
-import { SENSOR_DEVICE_CLASS_BATTERY } from "../../../data/sensor";
+import { computeUserInitials } from "../../../data/user";
+import { HomeAssistant } from "../../../types";
+import { HELPER_DOMAINS } from "../../config/helpers/const";
 import {
   AlarmPanelCardConfig,
   EntitiesCardConfig,
   HumidifierCardConfig,
-  LightCardConfig,
+  PictureCardConfig,
   PictureEntityCardConfig,
   ThermostatCardConfig,
 } from "../cards/types";
-import { LovelaceRowConfig } from "../entity-rows/types";
+import { EntityConfig } from "../entity-rows/types";
+import { ButtonsHeaderFooterConfig } from "../header-footer/types";
 
 const HIDE_DOMAIN = new Set([
   "automation",
@@ -27,71 +33,85 @@ const HIDE_DOMAIN = new Set([
   "device_tracker",
   "geo_location",
   "persistent_notification",
+  "script",
+  "sun",
   "zone",
 ]);
 
 const HIDE_PLATFORM = new Set(["mobile_app"]);
 
-interface SplittedByAreas {
-  areasWithEntities: Array<[AreaRegistryEntry, HassEntity[]]>;
+interface SplittedByAreaDevice {
+  areasWithEntities: { [areaId: string]: HassEntity[] };
+  devicesWithEntities: { [deviceId: string]: HassEntity[] };
   otherEntities: HassEntities;
 }
 
-const splitByAreas = (
-  areaEntries: AreaRegistryEntry[],
-  deviceEntries: DeviceRegistryEntry[],
-  entityEntries: EntityRegistryEntry[],
+const splitByAreaDevice = (
+  areaEntries: HomeAssistant["areas"],
+  deviceEntries: HomeAssistant["devices"],
+  entityEntries: HomeAssistant["entities"],
   entities: HassEntities
-): SplittedByAreas => {
+): SplittedByAreaDevice => {
   const allEntities = { ...entities };
-  const areasWithEntities: SplittedByAreas["areasWithEntities"] = [];
+  const areasWithEntities: SplittedByAreaDevice["areasWithEntities"] = {};
+  const devicesWithEntities: SplittedByAreaDevice["devicesWithEntities"] = {};
 
-  for (const area of areaEntries) {
-    const areaEntities: HassEntity[] = [];
-    const areaDevices = new Set(
-      deviceEntries
-        .filter((device) => device.area_id === area.area_id)
-        .map((device) => device.id)
-    );
-    for (const entity of entityEntries) {
-      if (
-        ((areaDevices.has(
-          // @ts-ignore
-          entity.device_id
-        ) &&
-          !entity.area_id) ||
-          entity.area_id === area.area_id) &&
-        entity.entity_id in allEntities
-      ) {
-        areaEntities.push(allEntities[entity.entity_id]);
-        delete allEntities[entity.entity_id];
+  for (const entity of Object.values(entityEntries)) {
+    const areaId =
+      entity.area_id ||
+      (entity.device_id && deviceEntries[entity.device_id]?.area_id);
+    if (areaId && areaId in areaEntries && entity.entity_id in allEntities) {
+      if (!(areaId in areasWithEntities)) {
+        areasWithEntities[areaId] = [];
       }
+      areasWithEntities[areaId].push(allEntities[entity.entity_id]);
+      delete allEntities[entity.entity_id];
+    } else if (
+      entity.device_id &&
+      entity.device_id in deviceEntries &&
+      entity.entity_id in allEntities
+    ) {
+      if (!(entity.device_id in devicesWithEntities)) {
+        devicesWithEntities[entity.device_id] = [];
+      }
+      devicesWithEntities[entity.device_id].push(allEntities[entity.entity_id]);
+      delete allEntities[entity.entity_id];
     }
-    if (areaEntities.length > 0) {
-      areasWithEntities.push([area, areaEntities]);
+  }
+  for (const [deviceId, deviceEntities] of Object.entries(
+    devicesWithEntities
+  )) {
+    if (deviceEntities.length === 1) {
+      allEntities[deviceEntities[0].entity_id] = deviceEntities[0];
+      delete devicesWithEntities[deviceId];
     }
   }
   return {
     areasWithEntities,
+    devicesWithEntities,
     otherEntities: allEntities,
   };
 };
 
 export const computeCards = (
-  states: Array<[string, HassEntity?]>,
+  states: HassEntities,
+  entityIds: string[],
   entityCardOptions: Partial<EntitiesCardConfig>,
-  single = false
+  renderFooterEntities = true
 ): LovelaceCardConfig[] => {
   const cards: LovelaceCardConfig[] = [];
 
   // For entity card
-  const entities: Array<string | LovelaceRowConfig> = [];
+  const entitiesConf: Array<string | EntityConfig> = [];
 
   const titlePrefix = entityCardOptions.title
-    ? `${entityCardOptions.title} `
+    ? entityCardOptions.title.toLowerCase()
     : undefined;
 
-  for (const [entityId, stateObj] of states) {
+  const footerEntities: ButtonsHeaderFooterConfig["entities"] = [];
+
+  for (const entityId of entityIds) {
+    const stateObj = states[entityId];
     const domain = computeDomain(entityId);
 
     if (domain === "alarm_control_panel") {
@@ -106,6 +126,12 @@ export const computeCards = (
         entity: entityId,
       };
       cards.push(cardConfig);
+    } else if (domain === "image") {
+      const cardConfig: PictureCardConfig = {
+        type: "picture",
+        image_entity: entityId,
+      };
+      cards.push(cardConfig);
     } else if (domain === "climate") {
       const cardConfig: ThermostatCardConfig = {
         type: "thermostat",
@@ -115,12 +141,6 @@ export const computeCards = (
     } else if (domain === "humidifier") {
       const cardConfig: HumidifierCardConfig = {
         type: "humidifier",
-        entity: entityId,
-      };
-      cards.push(cardConfig);
-    } else if (domain === "light" && single) {
-      const cardConfig: LightCardConfig = {
-        type: "light",
         entity: entityId,
       };
       cards.push(cardConfig);
@@ -144,59 +164,128 @@ export const computeCards = (
       };
       cards.push(cardConfig);
     } else if (
-      domain === "sensor" &&
-      stateObj?.attributes.device_class === SENSOR_DEVICE_CLASS_BATTERY
+      renderFooterEntities &&
+      (domain === "scene" || domain === "script")
     ) {
-      // Do nothing.
+      const conf: (typeof footerEntities)[0] = {
+        entity: entityId,
+        show_icon: true,
+        show_name: true,
+      };
+      let name: string | undefined;
+      if (
+        titlePrefix &&
+        stateObj &&
+        // eslint-disable-next-line no-cond-assign
+        (name = stripPrefixFromEntityName(
+          computeStateName(stateObj),
+          titlePrefix
+        ))
+      ) {
+        conf.name = name;
+      }
+      footerEntities.push(conf);
     } else {
-      let name: string;
+      let name: string | undefined;
       const entityConf =
         titlePrefix &&
         stateObj &&
         // eslint-disable-next-line no-cond-assign
-        (name = computeStateName(stateObj)) !== titlePrefix &&
-        name.startsWith(titlePrefix)
+        (name = stripPrefixFromEntityName(
+          computeStateName(stateObj),
+          titlePrefix
+        ))
           ? {
               entity: entityId,
-              name: adjustName(name.substr(titlePrefix.length)),
+              name,
             }
           : entityId;
 
-      entities.push(entityConf);
+      entitiesConf.push(entityConf);
     }
   }
 
-  if (entities.length > 0) {
-    cards.unshift({
-      type: "entities",
-      entities,
-      ...entityCardOptions,
-    });
+  entitiesConf.sort((a, b) => {
+    const entityIdA = typeof a === "string" ? a : a.entity;
+    const entityIdB = typeof b === "string" ? b : b.entity;
+
+    const categoryA = SENSOR_ENTITIES.includes(computeDomain(entityIdA))
+      ? "sensor"
+      : "control";
+    const categoryB = SENSOR_ENTITIES.includes(computeDomain(entityIdB))
+      ? "sensor"
+      : "control";
+
+    if (categoryA !== categoryB) {
+      return categoryA === "sensor" ? 1 : -1;
+    }
+
+    return stringCompare(
+      typeof a === "string"
+        ? states[a]
+          ? computeStateName(states[a])
+          : ""
+        : a.name || "",
+      typeof b === "string"
+        ? states[b]
+          ? computeStateName(states[b])
+          : ""
+        : b.name || ""
+    );
+  });
+
+  // If we ended up with footer entities but no normal entities,
+  // render the footer entities as normal entities.
+  if (entitiesConf.length === 0 && footerEntities.length > 0) {
+    return computeCards(states, entityIds, entityCardOptions, false);
   }
 
-  return cards;
+  if (entitiesConf.length > 0 || footerEntities.length > 0) {
+    const card: EntitiesCardConfig = {
+      type: "entities",
+      entities: entitiesConf,
+      ...entityCardOptions,
+    };
+    if (footerEntities.length > 0) {
+      card.footer = {
+        type: "buttons",
+        entities: footerEntities,
+      } as ButtonsHeaderFooterConfig;
+    }
+    cards.unshift(card);
+  }
+
+  if (cards.length < 2) {
+    return cards;
+  }
+
+  return [
+    {
+      type: "grid",
+      square: false,
+      columns: 1,
+      cards,
+    },
+  ];
 };
 
-const hasUpperCase = (str: string): boolean => str.toLowerCase() !== str;
-
-const adjustName = (name: string): string =>
-  // If first word already has an upper case letter (e.g. from brand name)
-  // leave as-is, otherwise capitalize the first word.
-  hasUpperCase(name.substr(0, name.indexOf(" ")))
-    ? name
-    : name[0].toUpperCase() + name.slice(1);
 const computeDefaultViewStates = (
   entities: HassEntities,
-  entityEntries: EntityRegistryEntry[]
+  entityEntries: HomeAssistant["entities"]
 ): HassEntities => {
   const states = {};
   const hiddenEntities = new Set(
-    entityEntries
-      .filter((entry) => HIDE_PLATFORM.has(entry.platform))
+    Object.values(entityEntries)
+      .filter(
+        (entry) =>
+          entry.entity_category ||
+          (entry.platform && HIDE_PLATFORM.has(entry.platform)) ||
+          entry.hidden
+      )
       .map((entry) => entry.entity_id)
   );
 
-  Object.keys(entities).forEach((entityId) => {
+  for (const entityId of Object.keys(entities)) {
     const stateObj = entities[entityId];
     if (
       !HIDE_DOMAIN.has(computeStateDomain(stateObj)) &&
@@ -204,7 +293,7 @@ const computeDefaultViewStates = (
     ) {
       states[entityId] = entities[entityId];
     }
-  });
+  }
   return states;
 };
 
@@ -213,19 +302,13 @@ export const generateViewConfig = (
   path: string,
   title: string | undefined,
   icon: string | undefined,
-  entities: HassEntities,
-  groupOrders: { [entityId: string]: number }
+  entities: HassEntities
 ): LovelaceViewConfig => {
-  const splitted = splitByGroups(entities);
-  splitted.groups.sort(
-    (gr1, gr2) => groupOrders[gr1.entity_id] - groupOrders[gr2.entity_id]
-  );
-
   const ungroupedEntitites: { [domain: string]: string[] } = {};
 
   // Organize ungrouped entities in ungrouped things
-  Object.keys(splitted.ungrouped).forEach((entityId) => {
-    const state = splitted.ungrouped[entityId];
+  for (const entityId of Object.keys(entities)) {
+    const state = entities[entityId];
     const domain = computeStateDomain(state);
 
     if (!(domain in ungroupedEntitites)) {
@@ -233,43 +316,107 @@ export const generateViewConfig = (
     }
 
     ungroupedEntitites[domain].push(state.entity_id);
-  });
+  }
 
-  let cards: LovelaceCardConfig[] = [];
+  const cards: LovelaceCardConfig[] = [];
 
-  splitted.groups.forEach((groupEntity) => {
-    cards = cards.concat(
-      computeCards(
-        groupEntity.attributes.entity_id.map((entityId): [
-          string,
-          HassEntity
-        ] => [entityId, entities[entityId]]),
-        {
-          title: computeStateName(groupEntity),
-          show_header_toggle: groupEntity.attributes.control !== "hidden",
+  if ("person" in ungroupedEntitites) {
+    const personCards: LovelaceCardConfig[] = [];
+
+    if (ungroupedEntitites.person.length === 1) {
+      cards.push({
+        type: "entities",
+        entities: ungroupedEntitites.person,
+      });
+    } else {
+      let backgroundColor: string | undefined;
+      let foregroundColor = "";
+
+      for (const personEntityId of ungroupedEntitites.person) {
+        const stateObj = entities[personEntityId];
+
+        let image = stateObj.attributes.entity_picture;
+
+        if (!image) {
+          if (backgroundColor === undefined) {
+            const computedStyle = getComputedStyle(document.body);
+            backgroundColor = encodeURIComponent(
+              computedStyle.getPropertyValue("--light-primary-color").trim()
+            );
+            foregroundColor = encodeURIComponent(
+              (
+                computedStyle.getPropertyValue("--text-light-primary-color") ||
+                computedStyle.getPropertyValue("--primary-text-color")
+              ).trim()
+            );
+          }
+          const initials = computeUserInitials(
+            stateObj.attributes.friendly_name || ""
+          );
+          image = `data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 50 50' width='50' height='50' style='background-color:${backgroundColor}'%3E%3Cg%3E%3Ctext font-family='roboto' x='50%25' y='50%25' text-anchor='middle' stroke='${foregroundColor}' font-size='1.3em' dy='.3em'%3E${initials}%3C/text%3E%3C/g%3E%3C/svg%3E`;
         }
-      )
+
+        personCards.push({
+          type: "picture-entity",
+          entity: personEntityId,
+          aspect_ratio: "1",
+          show_name: false,
+          image,
+        });
+      }
+
+      cards.push({
+        type: "grid",
+        square: true,
+        columns: 3,
+        cards: personCards,
+      });
+    }
+
+    delete ungroupedEntitites.person;
+  }
+
+  // Group helper entities in a single card
+  const helperEntities: string[] = [];
+
+  for (const domain of HELPER_DOMAINS) {
+    if (!(domain in ungroupedEntitites)) {
+      continue;
+    }
+    helperEntities.push(...ungroupedEntitites[domain]);
+    delete ungroupedEntitites[domain];
+  }
+
+  // Prepare translations for cards
+  const domainTranslations: Record<string, string> = {};
+
+  for (const domain of Object.keys(ungroupedEntitites)) {
+    domainTranslations[domain] = domainToName(localize, domain);
+  }
+
+  if (helperEntities.length) {
+    ungroupedEntitites._helpers = helperEntities;
+    domainTranslations._helpers = localize(
+      "ui.panel.lovelace.strategy.original-states.helpers"
     );
-  });
+  }
 
   Object.keys(ungroupedEntitites)
-    .sort()
+    .sort((domain1, domain2) =>
+      stringCompare(domainTranslations[domain1], domainTranslations[domain2])
+    )
     .forEach((domain) => {
-      cards = cards.concat(
-        computeCards(
-          ungroupedEntitites[domain]
-            .sort((a, b) =>
-              compare(
-                computeStateName(entities[a]),
-                computeStateName(entities[b])
-              )
+      cards.push(
+        ...computeCards(
+          entities,
+          ungroupedEntitites[domain].sort((a, b) =>
+            stringCompare(
+              computeStateName(entities[a]),
+              computeStateName(entities[b])
             )
-            .map((entityId): [string, HassEntity] => [
-              entityId,
-              entities[entityId],
-            ]),
+          ),
           {
-            title: domainToName(localize, domain),
+            title: domainTranslations[domain],
           }
         )
       );
@@ -289,11 +436,12 @@ export const generateViewConfig = (
 };
 
 export const generateDefaultViewConfig = (
-  areaEntries: AreaRegistryEntry[],
-  deviceEntries: DeviceRegistryEntry[],
-  entityEntries: EntityRegistryEntry[],
+  areaEntries: HomeAssistant["areas"],
+  deviceEntries: HomeAssistant["devices"],
+  entityEntries: HomeAssistant["entities"],
   entities: HassEntities,
-  localize: LocalizeFunc
+  localize: LocalizeFunc,
+  energyPrefs?: EnergyPreferences
 ): LovelaceViewConfig => {
   const states = computeDefaultViewStates(entities, entityEntries);
   const path = "default_view";
@@ -302,43 +450,128 @@ export const generateDefaultViewConfig = (
 
   // In the case of a default view, we want to use the group order attribute
   const groupOrders = {};
-  Object.keys(states).forEach((entityId) => {
+  for (const entityId of Object.keys(states)) {
     const stateObj = states[entityId];
     if (stateObj.attributes.order) {
       groupOrders[entityId] = stateObj.attributes.order;
     }
-  });
+  }
 
-  const splittedByAreas = splitByAreas(
+  const splittedByAreaDevice = splitByAreaDevice(
     areaEntries,
     deviceEntries,
     entityEntries,
     states
   );
 
+  const splittedByGroups = splitByGroups(splittedByAreaDevice.otherEntities);
+  splittedByGroups.groups.sort(
+    (gr1, gr2) => groupOrders[gr1.entity_id] - groupOrders[gr2.entity_id]
+  );
+
+  const groupCards: LovelaceCardConfig[] = [];
+
+  for (const groupEntity of splittedByGroups.groups) {
+    groupCards.push(
+      ...computeCards(entities, groupEntity.attributes.entity_id, {
+        title: computeStateName(groupEntity),
+        show_header_toggle: groupEntity.attributes.control !== "hidden",
+      })
+    );
+  }
+
   const config = generateViewConfig(
     localize,
     path,
     title,
     icon,
-    splittedByAreas.otherEntities,
-    groupOrders
+    splittedByGroups.ungrouped
   );
 
   const areaCards: LovelaceCardConfig[] = [];
 
-  splittedByAreas.areasWithEntities.forEach(([area, areaEntities]) => {
+  const sortedAreas = Object.entries(
+    splittedByAreaDevice.areasWithEntities
+  ).sort((a, b) => {
+    const areaA = areaEntries[a[0]];
+    const areaB = areaEntries[b[0]];
+    return stringCompare(areaA.name, areaB.name);
+  });
+
+  for (const [areaId, areaEntities] of sortedAreas) {
+    const area = areaEntries[areaId];
     areaCards.push(
       ...computeCards(
-        areaEntities.map((entity) => [entity.entity_id, entity]),
+        entities,
+        areaEntities.map((entity) => entity.entity_id),
         {
           title: area.name,
         }
       )
     );
+  }
+
+  const deviceCards: LovelaceCardConfig[] = [];
+
+  const sortedDevices = Object.entries(
+    splittedByAreaDevice.devicesWithEntities
+  ).sort((a, b) => {
+    const deviceA = deviceEntries[a[0]];
+    const deviceB = deviceEntries[b[0]];
+    return stringCompare(
+      deviceA.name_by_user || deviceA.name || "",
+      deviceB.name_by_user || deviceB.name || ""
+    );
   });
 
-  config.cards!.unshift(...areaCards);
+  for (const [deviceId, deviceEntities] of sortedDevices) {
+    const device = deviceEntries[deviceId];
+    deviceCards.push(
+      ...computeCards(
+        entities,
+        deviceEntities.map((entity) => entity.entity_id),
+        {
+          title:
+            device.name_by_user ||
+            device.name ||
+            localize(
+              "ui.panel.config.devices.unnamed_device",
+              "type",
+              localize(
+                `ui.panel.config.devices.type.${device.entry_type || "device"}`
+              )
+            ),
+        }
+      )
+    );
+  }
+
+  let energyCard: LovelaceCardConfig | undefined;
+
+  if (energyPrefs) {
+    // Distribution card requires the grid to be configured
+    const grid = energyPrefs.energy_sources.find(
+      (source) => source.type === "grid"
+    ) as GridSourceTypeEnergyPreference | undefined;
+
+    if (grid && grid.flow_from.length > 0) {
+      energyCard = {
+        title: localize(
+          "ui.panel.lovelace.cards.energy.energy_distribution.title_today"
+        ),
+        type: "energy-distribution",
+        link_dashboard: true,
+      };
+    }
+  }
+
+  config.cards!.unshift(
+    ...areaCards,
+    ...groupCards,
+    ...(energyCard ? [energyCard] : [])
+  );
+
+  config.cards!.push(...deviceCards);
 
   return config;
 };

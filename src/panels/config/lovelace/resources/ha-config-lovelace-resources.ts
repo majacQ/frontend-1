@@ -1,18 +1,13 @@
 import { mdiPlus } from "@mdi/js";
-import "@polymer/paper-checkbox/paper-checkbox";
-import "@polymer/paper-dropdown-menu/paper-dropdown-menu";
-import "@polymer/paper-item/paper-icon-item";
-import "@polymer/paper-listbox/paper-listbox";
 import { html, LitElement, PropertyValues, TemplateResult } from "lit";
 import { customElement, property, state } from "lit/decorators";
 import memoize from "memoize-one";
-import { compare } from "../../../../common/string/compare";
+import { stringCompare } from "../../../../common/string/compare";
 import {
   DataTableColumnContainer,
   RowClickedEvent,
 } from "../../../../components/data-table/ha-data-table";
 import "../../../../components/ha-fab";
-import "../../../../components/ha-icon";
 import "../../../../components/ha-svg-icon";
 import {
   createResource,
@@ -82,7 +77,6 @@ export class HaConfigLovelaceRescources extends LitElement {
       <hass-tabs-subpage-data-table
         .hass=${this.hass}
         .narrow=${this.narrow}
-        back-path="/config"
         .route=${this.route}
         .tabs=${lovelaceTabs}
         .columns=${this._columns(this.hass.language)}
@@ -149,7 +143,7 @@ export class HaConfigLovelaceRescources extends LitElement {
       createResource: async (values) => {
         const created = await createResource(this.hass!, values);
         this._resources = this._resources!.concat(created).sort((res1, res2) =>
-          compare(res1.url, res2.url)
+          stringCompare(res1.url, res2.url, this.hass!.locale.language)
         );
         loadLovelaceResources([created], this.hass!.auth.data.hassUrl);
       },
@@ -163,9 +157,16 @@ export class HaConfigLovelaceRescources extends LitElement {
       removeResource: async () => {
         if (
           !(await showConfirmationDialog(this, {
-            text: this.hass!.localize(
-              "ui.panel.config.lovelace.resources.confirm_delete"
+            title: this.hass!.localize(
+              "ui.panel.config.lovelace.resources.confirm_delete_title"
             ),
+            text: this.hass!.localize(
+              "ui.panel.config.lovelace.resources.confirm_delete_text",
+              { url: resource!.url }
+            ),
+            dismissText: this.hass!.localize("ui.common.cancel"),
+            confirmText: this.hass!.localize("ui.common.delete"),
+            destructive: true,
           }))
         ) {
           return false;
@@ -186,7 +187,7 @@ export class HaConfigLovelaceRescources extends LitElement {
             confirm: () => location.reload(),
           });
           return true;
-        } catch (err) {
+        } catch (err: any) {
           return false;
         }
       },

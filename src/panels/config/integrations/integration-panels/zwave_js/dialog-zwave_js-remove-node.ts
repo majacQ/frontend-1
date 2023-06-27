@@ -1,6 +1,6 @@
 import "@material/mwc-button/mwc-button";
 import { mdiCheckCircle, mdiCloseCircle } from "@mdi/js";
-import { css, CSSResultGroup, html, LitElement, TemplateResult } from "lit";
+import { css, CSSResultGroup, html, LitElement, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators";
 import { fireEvent } from "../../../../../common/dom/fire_event";
 import "../../../../../components/ha-circular-progress";
@@ -40,15 +40,15 @@ class DialogZWaveJSRemoveNode extends LitElement {
     this.entry_id = params.entry_id;
   }
 
-  protected render(): TemplateResult {
+  protected render() {
     if (!this.entry_id) {
-      return html``;
+      return nothing;
     }
 
     return html`
       <ha-dialog
         open
-        @closed="${this.closeDialog}"
+        @closed=${this.closeDialog}
         .heading=${createCloseHeading(
           this.hass,
           this.hass.localize("ui.panel.config.zwave_js.remove_node.title")
@@ -110,7 +110,7 @@ class DialogZWaveJSRemoveNode extends LitElement {
                 </div>
               </div>
               <mwc-button slot="primaryAction" @click=${this.closeDialog}>
-                ${this.hass.localize("ui.panel.config.zwave_js.common.close")}
+                ${this.hass.localize("ui.common.close")}
               </mwc-button>
             `
           : ``}
@@ -132,7 +132,7 @@ class DialogZWaveJSRemoveNode extends LitElement {
                 </div>
               </div>
               <mwc-button slot="primaryAction" @click=${this.closeDialog}>
-                ${this.hass.localize("ui.panel.config.zwave_js.common.close")}
+                ${this.hass.localize("ui.common.close")}
               </mwc-button>
             `
           : ``}
@@ -210,24 +210,11 @@ class DialogZWaveJSRemoveNode extends LitElement {
       haStyleDialog,
       css`
         .success {
-          color: green;
+          color: var(--success-color);
         }
 
         .failed {
-          color: red;
-        }
-
-        blockquote {
-          display: block;
-          background-color: #ddd;
-          padding: 8px;
-          margin: 8px 0;
-          font-size: 0.9em;
-        }
-
-        blockquote em {
-          font-size: 0.9em;
-          margin-top: 6px;
+          color: var(--error-color);
         }
 
         .flex-container {

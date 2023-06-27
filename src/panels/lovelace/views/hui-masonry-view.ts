@@ -64,6 +64,8 @@ export class MasonryView extends LitElement implements LovelaceViewElement {
 
   private _mqls?: MediaQueryList[];
 
+  private _mqlListenerRef?: () => void;
+
   public constructor() {
     super();
     this.addEventListener("iron-resize", (ev: Event) => ev.stopPropagation());
@@ -77,8 +79,9 @@ export class MasonryView extends LitElement implements LovelaceViewElement {
   public disconnectedCallback() {
     super.disconnectedCallback();
     this._mqls?.forEach((mql) => {
-      mql.removeListener(this._updateColumns);
+      mql.removeListener(this._mqlListenerRef!);
     });
+    this._mqlListenerRef = undefined;
     this._mqls = undefined;
   }
 
@@ -112,7 +115,10 @@ export class MasonryView extends LitElement implements LovelaceViewElement {
   private _initMqls() {
     this._mqls = [300, 600, 900, 1200].map((width) => {
       const mql = window.matchMedia(`(min-width: ${width}px)`);
-      mql.addListener(this._updateColumns.bind(this));
+      if (!this._mqlListenerRef) {
+        this._mqlListenerRef = this._updateColumns.bind(this);
+      }
+      mql.addListener(this._mqlListenerRef);
       return mql;
     });
   }
@@ -127,6 +133,10 @@ export class MasonryView extends LitElement implements LovelaceViewElement {
   public willUpdate(changedProperties: PropertyValues) {
     super.willUpdate(changedProperties);
 
+    if (this.lovelace?.editMode) {
+      import("./default-view-editable");
+    }
+
     if (changedProperties.has("hass")) {
       const oldHass = changedProperties.get("hass") as
         | HomeAssistant
@@ -140,14 +150,7 @@ export class MasonryView extends LitElement implements LovelaceViewElement {
 
     if (changedProperties.has("narrow")) {
       this._updateColumns();
-    }
-  }
-
-  protected updated(changedProperties: PropertyValues): void {
-    super.updated(changedProperties);
-
-    if (this.lovelace?.editMode) {
-      import("./default-view-editable");
+      return;
     }
 
     const oldLovelace = changedProperties.get("lovelace") as
@@ -155,10 +158,11 @@ export class MasonryView extends LitElement implements LovelaceViewElement {
       | undefined;
 
     if (
-      changedProperties.has("lovelace") &&
-      oldLovelace &&
-      (oldLovelace.config !== this.lovelace?.config ||
-        oldLovelace.editMode !== this.lovelace?.editMode)
+      changedProperties.has("cards") ||
+      (changedProperties.has("lovelace") &&
+        oldLovelace &&
+        (oldLovelace.config !== this.lovelace!.config ||
+          oldLovelace.editMode !== this.lovelace!.editMode))
     ) {
       this._createColumns();
     }
@@ -294,8 +298,6 @@ export class MasonryView extends LitElement implements LovelaceViewElement {
       :host {
         display: block;
         padding-top: 4px;
-        height: 100%;
-        box-sizing: border-box;
       }
 
       .badges {
@@ -318,21 +320,28 @@ export class MasonryView extends LitElement implements LovelaceViewElement {
         min-width: 0;
       }
 
-      .column > * {
+      /* Fix for safari */
+      .column:has(> *) {
+        flex-grow: 1;
+      }
+
+      .column:not(:has(> *:not([hidden]))) {
+        flex-grow: 0;
+      }
+
+      .column > *:not([hidden]) {
         display: block;
         margin: var(--masonry-view-card-margin, 4px 4px 8px);
       }
 
       ha-fab {
-        position: sticky;
-        float: right;
+        position: fixed;
         right: calc(16px + env(safe-area-inset-right));
         bottom: calc(16px + env(safe-area-inset-bottom));
         z-index: 1;
       }
 
       ha-fab.rtl {
-        float: left;
         right: auto;
         left: calc(16px + env(safe-area-inset-left));
       }

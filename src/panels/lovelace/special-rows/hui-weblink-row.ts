@@ -1,4 +1,4 @@
-import { css, CSSResultGroup, html, LitElement, TemplateResult } from "lit";
+import { css, CSSResultGroup, html, LitElement, nothing } from "lit";
 import { customElement, state } from "lit/decorators";
 import { ifDefined } from "lit/directives/if-defined";
 import "../../../components/ha-icon";
@@ -23,9 +23,9 @@ class HuiWeblinkRow extends LitElement implements LovelaceRow {
     };
   }
 
-  protected render(): TemplateResult {
+  protected render() {
     if (!this._config) {
-      return html``;
+      return nothing;
     }
 
     return html`
@@ -35,8 +35,8 @@ class HuiWeblinkRow extends LitElement implements LovelaceRow {
         rel="noreferrer"
         ?download=${this._config.download}
       >
-        <ha-icon .icon="${this._config.icon}"></ha-icon>
-        <div>${this._config.name}</div>
+        <ha-icon .icon=${this._config.icon}></ha-icon>
+        <div .title=${this._config.name}>${this._config.name}</div>
       </a>
     `;
   }

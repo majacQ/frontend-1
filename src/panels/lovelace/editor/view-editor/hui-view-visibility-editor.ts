@@ -1,17 +1,16 @@
-import "@polymer/paper-item/paper-icon-item";
-import "@polymer/paper-item/paper-item-body";
+import "@material/mwc-list/mwc-list-item";
 import {
   css,
   CSSResultGroup,
   html,
   LitElement,
   PropertyValues,
-  TemplateResult,
+  nothing,
 } from "lit";
 import { customElement, property, state } from "lit/decorators";
 import memoizeOne from "memoize-one";
 import { fireEvent } from "../../../../common/dom/fire_event";
-import { compare } from "../../../../common/string/compare";
+import { stringCompare } from "../../../../common/string/compare";
 import { HaSwitch } from "../../../../components/ha-switch";
 import "../../../../components/user/ha-user-badge";
 import { LovelaceViewConfig, ShowViewConfig } from "../../../../data/lovelace";
@@ -43,7 +42,9 @@ export class HuiViewVisibilityEditor extends LitElement {
   @state() private _visible!: boolean | ShowViewConfig[];
 
   private _sortedUsers = memoizeOne((users: User[]) =>
-    users.sort((a, b) => compare(a.name, b.name))
+    users.sort((a, b) =>
+      stringCompare(a.name, b.name, this.hass.locale.language)
+    )
   );
 
   protected firstUpdated(changedProps: PropertyValues) {
@@ -55,9 +56,9 @@ export class HuiViewVisibilityEditor extends LitElement {
     });
   }
 
-  protected render(): TemplateResult {
+  protected render() {
     if (!this.hass || !this._users) {
-      return html``;
+      return nothing;
     }
 
     return html`
@@ -68,19 +69,20 @@ export class HuiViewVisibilityEditor extends LitElement {
       </p>
       ${this._sortedUsers(this._users).map(
         (user) => html`
-          <paper-icon-item>
+          <mwc-list-item graphic="avatar" hasMeta>
             <ha-user-badge
-              slot="item-icon"
+              slot="graphic"
               .hass=${this.hass}
               .user=${user}
             ></ha-user-badge>
-            <paper-item-body>${user.name}</paper-item-body>
+            <span>${user.name}</span>
             <ha-switch
-              .userId="${user.id}"
+              slot="meta"
+              .userId=${user.id}
               @change=${this.valChange}
               .checked=${this.checkUser(user.id)}
             ></ha-switch>
-          </paper-icon-item>
+          </mwc-list-item>
         `
       )}
     `;

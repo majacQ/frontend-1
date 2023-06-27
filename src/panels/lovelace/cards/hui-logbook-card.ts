@@ -4,25 +4,24 @@ import {
   html,
   LitElement,
   PropertyValues,
-  TemplateResult,
+  nothing,
 } from "lit";
 import { customElement, property, state } from "lit/decorators";
 import { classMap } from "lit/directives/class-map";
 import { isComponentLoaded } from "../../../common/config/is_component_loaded";
 import { applyThemesOnElement } from "../../../common/dom/apply_themes_on_element";
-import { computeStateDomain } from "../../../common/entity/compute_state_domain";
-import { throttle } from "../../../common/util/throttle";
 import "../../../components/ha-card";
-import "../../../components/ha-circular-progress";
-import { getLogbookData, LogbookEntry } from "../../../data/logbook";
 import type { HomeAssistant } from "../../../types";
 import "../../logbook/ha-logbook";
+import type { HaLogbook } from "../../logbook/ha-logbook";
 import { findEntities } from "../common/find-entities";
 import { processConfigEntities } from "../common/process-config-entities";
 import "../components/hui-warning";
 import type { EntityConfig } from "../entity-rows/types";
 import type { LovelaceCard, LovelaceCardEditor } from "../types";
 import type { LogbookCardConfig } from "./types";
+
+export const DEFAULT_HOURS_TO_SHOW = 24;
 
 @customElement("hui-logbook-card")
 export class HuiLogbookCard extends LitElement implements LovelaceCard {
@@ -51,21 +50,13 @@ export class HuiLogbookCard extends LitElement implements LovelaceCard {
     };
   }
 
-  @property({ attribute: false }) public hass?: HomeAssistant;
+  @property({ attribute: false }) public hass!: HomeAssistant;
 
   @state() private _config?: LogbookCardConfig;
 
-  @state() private _logbookEntries?: LogbookEntry[];
+  @state() private _time?: HaLogbook["time"];
 
-  @state() private _persons = {};
-
-  @state() private _configEntities?: EntityConfig[];
-
-  private _lastLogbookDate?: Date;
-
-  private _throttleGetLogbookEntries = throttle(() => {
-    this._getLogBookData();
-  }, 10000);
+  @state() private _entityId?: string[];
 
   public getCardSize(): number {
     return 9 + (this._config?.title ? 1 : 0);
@@ -76,45 +67,16 @@ export class HuiLogbookCard extends LitElement implements LovelaceCard {
       throw new Error("Entities must be specified");
     }
 
-    this._configEntities = processConfigEntities<EntityConfig>(config.entities);
-
     this._config = {
-      hours_to_show: 24,
+      hours_to_show: DEFAULT_HOURS_TO_SHOW,
       ...config,
     };
-  }
-
-  protected shouldUpdate(changedProps: PropertyValues): boolean {
-    if (
-      changedProps.has("_config") ||
-      changedProps.has("_persons") ||
-      changedProps.has("_logbookEntries")
-    ) {
-      return true;
-    }
-
-    const oldHass = changedProps.get("hass") as HomeAssistant | undefined;
-
-    if (
-      !this._configEntities ||
-      !oldHass ||
-      oldHass.themes !== this.hass!.themes ||
-      oldHass.locale !== this.hass!.locale
-    ) {
-      return true;
-    }
-
-    for (const entity of this._configEntities) {
-      if (oldHass.states[entity.entity] !== this.hass!.states[entity.entity]) {
-        return true;
-      }
-    }
-
-    return false;
-  }
-
-  protected firstUpdated(): void {
-    this._fetchPersonNames();
+    this._time = {
+      recent: this._config!.hours_to_show! * 60 * 60,
+    };
+    this._entityId = processConfigEntities<EntityConfig>(config.entities).map(
+      (entity) => entity.entity
+    );
   }
 
   protected updated(changedProperties: PropertyValues) {
@@ -134,45 +96,20 @@ export class HuiLogbookCard extends LitElement implements LovelaceCard {
     ) {
       applyThemesOnElement(this, this.hass.themes, this._config.theme);
     }
-
-    if (
-      configChanged &&
-      (oldConfig?.entities !== this._config.entities ||
-        oldConfig?.hours_to_show !== this._config!.hours_to_show)
-    ) {
-      this._logbookEntries = undefined;
-      this._lastLogbookDate = undefined;
-
-      if (!this._configEntities) {
-        return;
-      }
-
-      this._throttleGetLogbookEntries();
-      return;
-    }
-
-    if (
-      oldHass &&
-      this._configEntities!.some(
-        (entity) =>
-          oldHass.states[entity.entity] !== this.hass!.states[entity.entity]
-      )
-    ) {
-      // wait for commit of data (we only account for the default setting of 1 sec)
-      setTimeout(this._throttleGetLogbookEntries, 1000);
-    }
   }
 
-  protected render(): TemplateResult {
+  protected render() {
     if (!this.hass || !this._config) {
-      return html``;
+      return nothing;
     }
 
     if (!isComponentLoaded(this.hass, "logbook")) {
       return html`
         <hui-warning>
           ${this.hass.localize(
-            "ui.components.logbook.component_not_loaded"
+            "ui.components.logbook.not_loaded",
+            "platform",
+            "logbook"
           )}</hui-warning
         >
       `;
@@ -184,84 +121,17 @@ export class HuiLogbookCard extends LitElement implements LovelaceCard {
         class=${classMap({ "no-header": !this._config!.title })}
       >
         <div class="content">
-          ${!this._logbookEntries
-            ? html`
-                <ha-circular-progress
-                  active
-                  alt=${this.hass.localize("ui.common.loading")}
-                ></ha-circular-progress>
-              `
-            : this._logbookEntries.length
-            ? html`
-                <ha-logbook
-                  narrow
-                  relative-time
-                  virtualize
-                  .hass=${this.hass}
-                  .entries=${this._logbookEntries}
-                  .userIdToName=${this._persons}
-                ></ha-logbook>
-              `
-            : html`
-                <div class="no-entries">
-                  ${this.hass.localize(
-                    "ui.components.logbook.entries_not_found"
-                  )}
-                </div>
-              `}
+          <ha-logbook
+            .hass=${this.hass}
+            .time=${this._time}
+            .entityIds=${this._entityId}
+            narrow
+            relative-time
+            virtualize
+          ></ha-logbook>
         </div>
       </ha-card>
     `;
-  }
-
-  private async _getLogBookData() {
-    if (
-      !this.hass ||
-      !this._config ||
-      !isComponentLoaded(this.hass, "logbook")
-    ) {
-      return;
-    }
-
-    const hoursToShowDate = new Date(
-      new Date().getTime() - this._config!.hours_to_show! * 60 * 60 * 1000
-    );
-    const lastDate = this._lastLogbookDate || hoursToShowDate;
-    const now = new Date();
-
-    const newEntries = await getLogbookData(
-      this.hass,
-      lastDate.toISOString(),
-      now.toISOString(),
-      this._configEntities!.map((entity) => entity.entity).toString(),
-      true
-    );
-
-    const logbookEntries = this._logbookEntries
-      ? [...newEntries, ...this._logbookEntries]
-      : newEntries;
-
-    this._logbookEntries = logbookEntries.filter(
-      (logEntry) => new Date(logEntry.when) > hoursToShowDate
-    );
-
-    this._lastLogbookDate = now;
-  }
-
-  private _fetchPersonNames() {
-    if (!this.hass) {
-      return;
-    }
-
-    Object.values(this.hass!.states).forEach((entity) => {
-      if (
-        entity.attributes.user_id &&
-        computeStateDomain(entity) === "person"
-      ) {
-        this._persons[entity.attributes.user_id] =
-          entity.attributes.friendly_name;
-      }
-    });
   }
 
   static get styles(): CSSResultGroup {
@@ -282,20 +152,9 @@ export class HuiLogbookCard extends LitElement implements LovelaceCard {
           padding-top: 16px;
         }
 
-        .no-entries {
-          text-align: center;
-          padding: 16px;
-          color: var(--secondary-text-color);
-        }
-
         ha-logbook {
           height: 385px;
           display: block;
-        }
-
-        ha-circular-progress {
-          display: flex;
-          justify-content: center;
         }
       `,
     ];

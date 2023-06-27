@@ -16,7 +16,7 @@ import {
   html,
   LitElement,
   PropertyValues,
-  TemplateResult,
+  nothing,
 } from "lit";
 import { customElement, property, state } from "lit/decorators";
 import { classMap } from "lit/directives/class-map";
@@ -26,13 +26,17 @@ import { computeDomain } from "../../../common/entity/compute_domain";
 import { computeStateName } from "../../../common/entity/compute_state_name";
 import { navigate } from "../../../common/navigate";
 import { computeRTL } from "../../../common/util/compute_rtl";
+import { afterNextRender } from "../../../common/util/render-status";
 import "../../../components/device/ha-device-picker";
 import "../../../components/entity/ha-entities-picker";
+import "../../../components/ha-area-picker";
+import "../../../components/ha-button-menu";
 import "../../../components/ha-card";
 import "../../../components/ha-fab";
 import "../../../components/ha-icon-button";
-import "../../../components/ha-icon-input";
+import "../../../components/ha-icon-picker";
 import "../../../components/ha-svg-icon";
+import "../../../components/ha-textfield";
 import {
   computeDeviceName,
   DeviceRegistryEntry,
@@ -41,6 +45,7 @@ import {
 import {
   EntityRegistryEntry,
   subscribeEntityRegistry,
+  updateEntityRegistryEntry,
 } from "../../../data/entity_registry";
 import {
   activateScene,
@@ -52,6 +57,7 @@ import {
   SceneConfig,
   SceneEntities,
   SceneEntity,
+  SceneMetaData,
   SCENE_IGNORED_DOMAINS,
   showSceneEditor,
 } from "../../../data/scene";
@@ -59,13 +65,13 @@ import {
   showAlertDialog,
   showConfirmationDialog,
 } from "../../../dialogs/generic/show-dialog-box";
+import "../../../layouts/hass-subpage";
 import { KeyboardShortcutMixin } from "../../../mixins/keyboard-shortcut-mixin";
 import { SubscribeMixin } from "../../../mixins/subscribe-mixin";
 import { haStyle } from "../../../resources/styles";
 import { HomeAssistant, Route } from "../../../types";
 import { showToast } from "../../../util/toast";
 import "../ha-config-section";
-import { configSections } from "../ha-panel-config";
 
 interface DeviceEntities {
   id: string;
@@ -103,6 +109,8 @@ export class HaSceneEditor extends SubscribeMixin(
 
   @state() private _entities: string[] = [];
 
+  private _single_entities: string[] = [];
+
   @state() private _devices: string[] = [];
 
   @state()
@@ -117,9 +125,25 @@ export class HaSceneEditor extends SubscribeMixin(
 
   private _unsubscribeEvents?: () => void;
 
-  @state() private _deviceEntityLookup: DeviceEntitiesLookup = {};
+  private _deviceEntityLookup: DeviceEntitiesLookup = {};
 
   private _activateContextId?: string;
+
+  @state() private _saving = false;
+
+  // undefined means not set in this session
+  // null means picked nothing.
+  @state() private _updatedAreaId?: string | null;
+
+  // Callback to be called when scene is set.
+  private _scenesSet?: () => void;
+
+  private _getRegistryAreaId = memoizeOne(
+    (entries: EntityRegistryEntry[], entity_id: string) => {
+      const entry = entries.find((ent) => ent.entity_id === entity_id);
+      return entry ? entry.area_id : null;
+    }
+  );
 
   private _getEntitiesDevices = memoizeOne(
     (
@@ -182,9 +206,9 @@ export class HaSceneEditor extends SubscribeMixin(
     ];
   }
 
-  protected render(): TemplateResult {
+  protected render() {
     if (!this.hass) {
-      return html``;
+      return nothing;
     }
     const { devices, entities } = this._getEntitiesDevices(
       this._entities,
@@ -192,38 +216,29 @@ export class HaSceneEditor extends SubscribeMixin(
       this._deviceEntityLookup,
       this._deviceRegistryEntries
     );
-    const name = this._scene
-      ? computeStateName(this._scene)
-      : this.hass.localize("ui.panel.config.scene.editor.default_name");
 
     return html`
-      <hass-tabs-subpage
+      <hass-subpage
         .hass=${this.hass}
         .narrow=${this.narrow}
         .route=${this.route}
-        .backCallback=${() => this._backTapped()}
-        .tabs=${configSections.automation}
+        .backCallback=${this._backTapped}
+        .header=${this._scene
+          ? computeStateName(this._scene)
+          : this.hass.localize("ui.panel.config.scene.editor.default_name")}
       >
         <ha-button-menu
-          corner="BOTTOM_START"
           slot="toolbar-icon"
           @action=${this._handleMenuAction}
           activatable
         >
-          <mwc-icon-button
+          <ha-icon-button
             slot="trigger"
-            .title=${this.hass.localize("ui.common.menu")}
-            .label=${this.hass.localize("ui.common.overflow_menu")}
-            ><ha-svg-icon path=${mdiDotsVertical}></ha-svg-icon>
-          </mwc-icon-button>
+            .label=${this.hass.localize("ui.common.menu")}
+            .path=${mdiDotsVertical}
+          ></ha-icon-button>
 
-          <mwc-list-item
-            .disabled=${!this.sceneId}
-            aria-label=${this.hass.localize(
-              "ui.panel.config.scene.picker.duplicate_scene"
-            )}
-            graphic="icon"
-          >
+          <mwc-list-item .disabled=${!this.sceneId} graphic="icon">
             ${this.hass.localize(
               "ui.panel.config.scene.picker.duplicate_scene"
             )}
@@ -235,9 +250,6 @@ export class HaSceneEditor extends SubscribeMixin(
 
           <mwc-list-item
             .disabled=${!this.sceneId}
-            aria-label=${this.hass.localize(
-              "ui.panel.config.scene.picker.delete_scene"
-            )}
             class=${classMap({ warning: Boolean(this.sceneId) })}
             graphic="icon"
           >
@@ -251,35 +263,32 @@ export class HaSceneEditor extends SubscribeMixin(
           </mwc-list-item>
         </ha-button-menu>
         ${this._errors ? html` <div class="errors">${this._errors}</div> ` : ""}
-        ${this.narrow ? html` <span slot="header">${name}</span> ` : ""}
         <div
           id="root"
-          class="${classMap({
+          class=${classMap({
             rtl: computeRTL(this.hass),
-          })}"
+          })}
         >
           ${this._config
             ? html`
-                <ha-config-section vertical .isWide=${this.isWide}>
-                  ${!this.narrow
-                    ? html` <span slot="header">${name}</span> `
-                    : ""}
-                  <div slot="introduction">
-                    ${this.hass.localize(
-                      "ui.panel.config.scene.editor.introduction"
-                    )}
-                  </div>
-                  <ha-card>
+                <div
+                  class=${classMap({
+                    container: true,
+                    narrow: !this.isWide,
+                  })}
+                >
+                  <ha-card outlined>
                     <div class="card-content">
-                      <paper-input
+                      <ha-textfield
                         .value=${this._config.name}
                         .name=${"name"}
-                        @value-changed=${this._valueChanged}
-                        label=${this.hass.localize(
+                        @change=${this._valueChanged}
+                        .label=${this.hass.localize(
                           "ui.panel.config.scene.editor.name"
                         )}
-                      ></paper-input>
-                      <ha-icon-input
+                      ></ha-textfield>
+                      <ha-icon-picker
+                        .hass=${this.hass}
                         .label=${this.hass.localize(
                           "ui.panel.config.scene.editor.icon"
                         )}
@@ -287,10 +296,20 @@ export class HaSceneEditor extends SubscribeMixin(
                         .value=${this._config.icon}
                         @value-changed=${this._valueChanged}
                       >
-                      </ha-icon-input>
+                      </ha-icon-picker>
+                      <ha-area-picker
+                        .hass=${this.hass}
+                        .label=${this.hass.localize(
+                          "ui.panel.config.scene.editor.area"
+                        )}
+                        .name=${"area"}
+                        .value=${this._sceneAreaIdWithUpdates || ""}
+                        @value-changed=${this._areaChanged}
+                      >
+                      </ha-area-picker>
                     </div>
                   </ha-card>
-                </ha-config-section>
+                </div>
 
                 <ha-config-section vertical .isWide=${this.isWide}>
                   <div slot="header">
@@ -307,14 +326,14 @@ export class HaSceneEditor extends SubscribeMixin(
                   ${devices.map(
                     (device) =>
                       html`
-                        <ha-card>
+                        <ha-card outlined>
                           <h1 class="card-header">
                             ${device.name}
                             <ha-icon-button
-                              icon="hass:delete"
-                              title="${this.hass.localize(
+                              .path=${mdiDelete}
+                              .label=${this.hass.localize(
                                 "ui.panel.config.scene.editor.devices.delete"
-                              )}"
+                              )}
                               .device=${device.id}
                               @click=${this._deleteDevice}
                             ></ha-icon-button>
@@ -322,7 +341,7 @@ export class HaSceneEditor extends SubscribeMixin(
                           ${device.entities.map((entityId) => {
                             const entityStateObj = this.hass.states[entityId];
                             if (!entityStateObj) {
-                              return html``;
+                              return nothing;
                             }
                             return html`
                               <paper-icon-item
@@ -345,6 +364,7 @@ export class HaSceneEditor extends SubscribeMixin(
                   )}
 
                   <ha-card
+                    outlined
                     .header=${this.hass.localize(
                       "ui.panel.config.scene.editor.devices.add"
                     )}
@@ -377,17 +397,17 @@ export class HaSceneEditor extends SubscribeMixin(
                         ${entities.length
                           ? html`
                               <ha-card
+                                outlined
                                 class="entities"
                                 .header=${this.hass.localize(
                                   "ui.panel.config.scene.editor.entities.without_device"
                                 )}
                               >
                                 ${entities.map((entityId) => {
-                                  const entityStateObj = this.hass.states[
-                                    entityId
-                                  ];
+                                  const entityStateObj =
+                                    this.hass.states[entityId];
                                   if (!entityStateObj) {
-                                    return html``;
+                                    return nothing;
                                   }
                                   return html`
                                     <paper-icon-item
@@ -403,11 +423,11 @@ export class HaSceneEditor extends SubscribeMixin(
                                         ${computeStateName(entityStateObj)}
                                       </paper-item-body>
                                       <ha-icon-button
-                                        icon="hass:delete"
+                                        .path=${mdiDelete}
                                         .entityId=${entityId}
-                                        .title="${this.hass.localize(
+                                        .label=${this.hass.localize(
                                           "ui.panel.config.scene.editor.entities.delete"
-                                        )}"
+                                        )}
                                         @click=${this._deleteEntity}
                                       ></ha-icon-button>
                                     </paper-icon-item>
@@ -418,6 +438,7 @@ export class HaSceneEditor extends SubscribeMixin(
                           : ""}
 
                         <ha-card
+                          outlined
                           header=${this.hass.localize(
                             "ui.panel.config.scene.editor.entities.add"
                           )}
@@ -446,12 +467,13 @@ export class HaSceneEditor extends SubscribeMixin(
           slot="fab"
           .label=${this.hass.localize("ui.panel.config.scene.editor.save")}
           extended
+          .disabled=${this._saving}
           @click=${this._saveScene}
-          class=${classMap({ dirty: this._dirty })}
+          class=${classMap({ dirty: this._dirty, saving: this._saving })}
         >
           <ha-svg-icon slot="icon" .path=${mdiContentSave}></ha-svg-icon>
         </ha-fab>
-      </hass-tabs-subpage>
+      </hass-subpage>
     `;
   }
 
@@ -476,18 +498,23 @@ export class HaSceneEditor extends SubscribeMixin(
       this._config = {
         name: this.hass.localize("ui.panel.config.scene.editor.default_name"),
         entities: {},
-        ...initData,
+        ...initData?.config,
       };
       this._initEntities(this._config);
-      if (initData) {
-        this._dirty = true;
+      if (initData?.areaId) {
+        this._updatedAreaId = initData.areaId;
       }
+      this._dirty =
+        initData !== undefined &&
+        (initData.areaId !== undefined || initData.config !== undefined);
     }
 
     if (changedProps.has("_entityRegistryEntries")) {
+      this._deviceEntityLookup = {};
       for (const entity of this._entityRegistryEntries) {
         if (
           !entity.device_id ||
+          entity.entity_category ||
           SCENE_IGNORED_DOMAINS.includes(computeDomain(entity.entity_id))
         ) {
           continue;
@@ -495,13 +522,10 @@ export class HaSceneEditor extends SubscribeMixin(
         if (!(entity.device_id in this._deviceEntityLookup)) {
           this._deviceEntityLookup[entity.device_id] = [];
         }
-        if (
-          !this._deviceEntityLookup[entity.device_id].includes(entity.entity_id)
-        ) {
-          this._deviceEntityLookup[entity.device_id].push(entity.entity_id);
-        }
+        this._deviceEntityLookup[entity.device_id].push(entity.entity_id);
         if (
           this._entities.includes(entity.entity_id) &&
+          !this._single_entities.includes(entity.device_id) &&
           !this._devices.includes(entity.device_id)
         ) {
           this._devices = [...this._devices, entity.device_id];
@@ -515,6 +539,9 @@ export class HaSceneEditor extends SubscribeMixin(
       !this._scene
     ) {
       this._setScene();
+    }
+    if (this._scenesSet && changedProps.has("scenes")) {
+      this._scenesSet();
     }
   }
 
@@ -539,10 +566,11 @@ export class HaSceneEditor extends SubscribeMixin(
     this._scene = scene;
     const { context } = await activateScene(this.hass, this._scene.entity_id);
     this._activateContextId = context.id;
-    this._unsubscribeEvents = await this.hass!.connection.subscribeEvents<HassEvent>(
-      (event) => this._stateChanged(event),
-      "state_changed"
-    );
+    this._unsubscribeEvents =
+      await this.hass!.connection.subscribeEvents<HassEvent>(
+        (event) => this._stateChanged(event),
+        "state_changed"
+      );
   }
 
   private _showMoreInfo(ev: Event) {
@@ -554,8 +582,8 @@ export class HaSceneEditor extends SubscribeMixin(
     let config: SceneConfig;
     try {
       config = await getSceneConfig(this.hass, this.sceneId!);
-    } catch (err) {
-      showAlertDialog(this, {
+    } catch (err: any) {
+      await showAlertDialog(this, {
         text:
           err.status_code === 404
             ? this.hass.localize(
@@ -566,7 +594,8 @@ export class HaSceneEditor extends SubscribeMixin(
                 "err_no",
                 err.status_code
               ),
-      }).then(() => history.back());
+      });
+      history.back();
       return;
     }
 
@@ -585,20 +614,38 @@ export class HaSceneEditor extends SubscribeMixin(
   private _initEntities(config: SceneConfig) {
     this._entities = Object.keys(config.entities);
     this._entities.forEach((entity) => this._storeState(entity));
+    this._single_entities = [];
 
     const filteredEntityReg = this._entityRegistryEntries.filter((entityReg) =>
       this._entities.includes(entityReg.entity_id)
     );
-    this._devices = [];
+    const newDevices: string[] = [];
+
+    if (config.metadata) {
+      Object.keys(config.entities).forEach((entity) => {
+        if (
+          !this._single_entities.includes(entity) &&
+          config.metadata![entity]?.entity_only
+        ) {
+          this._single_entities.push(entity);
+        }
+      });
+    }
 
     for (const entityReg of filteredEntityReg) {
       if (!entityReg.device_id) {
         continue;
       }
-      if (!this._devices.includes(entityReg.device_id)) {
-        this._devices = [...this._devices, entityReg.device_id];
+      const entityMetaData = config.metadata?.[entityReg.entity_id];
+      if (
+        !newDevices.includes(entityReg.device_id) &&
+        !entityMetaData?.entity_only
+      ) {
+        newDevices.push(entityReg.device_id);
       }
     }
+
+    this._devices = newDevices;
   }
 
   private _entityPicked(ev: CustomEvent) {
@@ -607,18 +654,9 @@ export class HaSceneEditor extends SubscribeMixin(
     if (this._entities.includes(entityId)) {
       return;
     }
-    const entityRegistry = this._entityRegistryEntries.find(
-      (entityReg) => entityReg.entity_id === entityId
-    );
-    if (
-      entityRegistry?.device_id &&
-      !this._devices.includes(entityRegistry.device_id)
-    ) {
-      this._pickDevice(entityRegistry.device_id);
-    } else {
-      this._entities = [...this._entities, entityId];
-      this._storeState(entityId);
-    }
+    this._entities = [...this._entities, entityId];
+    this._single_entities.push(entityId);
+    this._storeState(entityId);
     this._dirty = true;
   }
 
@@ -626,6 +664,9 @@ export class HaSceneEditor extends SubscribeMixin(
     ev.stopPropagation();
     const deleteEntityId = (ev.target as any).entityId;
     this._entities = this._entities.filter(
+      (entityId) => entityId !== deleteEntityId
+    );
+    this._single_entities = this._single_entities.filter(
       (entityId) => entityId !== deleteEntityId
     );
     this._dirty = true;
@@ -666,14 +707,14 @@ export class HaSceneEditor extends SubscribeMixin(
     this._dirty = true;
   }
 
-  private _valueChanged(ev: CustomEvent) {
+  private _valueChanged(ev: Event) {
     ev.stopPropagation();
     const target = ev.target as any;
     const name = target.name;
     if (!name) {
       return;
     }
-    let newVal = ev.detail.value;
+    let newVal = (ev as CustomEvent).detail?.value ?? target.value;
     if (target.type === "number") {
       newVal = Number(newVal);
     }
@@ -689,6 +730,21 @@ export class HaSceneEditor extends SubscribeMixin(
     this._dirty = true;
   }
 
+  private _areaChanged(ev: CustomEvent) {
+    const newValue = ev.detail.value === "" ? null : ev.detail.value;
+
+    if (newValue === (this._sceneAreaIdWithUpdates || "")) {
+      return;
+    }
+
+    if (newValue === this._sceneAreaIdCurrent) {
+      this._updatedAreaId = undefined;
+    } else {
+      this._updatedAreaId = newValue;
+      this._dirty = true;
+    }
+  }
+
   private _stateChanged(event: HassEvent) {
     if (
       event.context.id !== this._activateContextId &&
@@ -698,32 +754,31 @@ export class HaSceneEditor extends SubscribeMixin(
     }
   }
 
-  private _backTapped(): void {
-    if (this._dirty) {
-      showConfirmationDialog(this, {
-        text: this.hass!.localize(
-          "ui.panel.config.scene.editor.unsaved_confirm"
-        ),
-        confirmText: this.hass!.localize("ui.common.leave"),
-        dismissText: this.hass!.localize("ui.common.stay"),
-        confirm: () => this._goBack(),
-      });
-    } else {
+  private _backTapped = async (): Promise<void> => {
+    const result = await this.confirmUnsavedChanged();
+    if (result) {
       this._goBack();
     }
-  }
+  };
 
   private _goBack(): void {
     applyScene(this.hass, this._storedStates);
-    history.back();
+    afterNextRender(() => history.back());
   }
 
   private _deleteTapped(): void {
     showConfirmationDialog(this, {
-      text: this.hass!.localize("ui.panel.config.scene.picker.delete_confirm"),
+      title: this.hass!.localize(
+        "ui.panel.config.scene.picker.delete_confirm_title"
+      ),
+      text: this.hass!.localize(
+        "ui.panel.config.scene.picker.delete_confirm_text",
+        { name: this._config?.name }
+      ),
       confirmText: this.hass!.localize("ui.common.delete"),
       dismissText: this.hass!.localize("ui.common.cancel"),
       confirm: () => this._delete(),
+      destructive: true,
     });
   }
 
@@ -733,29 +788,55 @@ export class HaSceneEditor extends SubscribeMixin(
     history.back();
   }
 
-  private async _duplicate() {
+  private async confirmUnsavedChanged(): Promise<boolean> {
     if (this._dirty) {
-      if (
-        !(await showConfirmationDialog(this, {
-          text: this.hass!.localize(
-            "ui.panel.config.scene.editor.unsaved_confirm"
-          ),
-          confirmText: this.hass!.localize("ui.common.leave"),
-          dismissText: this.hass!.localize("ui.common.stay"),
-        }))
-      ) {
-        return;
-      }
-      // Wait for dialog to complete closing
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      return showConfirmationDialog(this, {
+        title: this.hass!.localize(
+          "ui.panel.config.scene.editor.unsaved_confirm_title"
+        ),
+        text: this.hass!.localize(
+          "ui.panel.config.scene.editor.unsaved_confirm_text"
+        ),
+        confirmText: this.hass!.localize("ui.common.leave"),
+        dismissText: this.hass!.localize("ui.common.stay"),
+        destructive: true,
+      });
     }
-    showSceneEditor({
-      ...this._config,
-      id: undefined,
-      name: `${this._config?.name} (${this.hass.localize(
-        "ui.panel.config.scene.picker.duplicate"
-      )})`,
-    });
+    return true;
+  }
+
+  private async _duplicate() {
+    const result = await this.confirmUnsavedChanged();
+    if (result) {
+      showSceneEditor(
+        {
+          ...this._config,
+          id: undefined,
+          name: `${this._config?.name} (${this.hass.localize(
+            "ui.panel.config.scene.picker.duplicate"
+          )})`,
+        },
+        this._sceneAreaIdCurrent || undefined
+      );
+    }
+  }
+
+  private _calculateMetaData(): SceneMetaData {
+    const output: SceneMetaData = {};
+
+    for (const entityId of this._single_entities) {
+      const entityState = this._getCurrentState(entityId);
+
+      if (!entityState) {
+        continue;
+      }
+
+      output[entityId] = {
+        entity_only: true,
+      };
+    }
+
+    return output;
   }
 
   private _calculateStates(): SceneEntities {
@@ -790,25 +871,80 @@ export class HaSceneEditor extends SubscribeMixin(
 
   private async _saveScene(): Promise<void> {
     const id = !this.sceneId ? "" + Date.now() : this.sceneId!;
-    this._config = { ...this._config!, entities: this._calculateStates() };
+    this._config = {
+      ...this._config!,
+      entities: this._calculateStates(),
+      metadata: this._calculateMetaData(),
+    };
     try {
+      this._saving = true;
       await saveScene(this.hass, id, this._config);
+
+      if (this._updatedAreaId !== undefined) {
+        let scene =
+          this._scene ||
+          this.scenes.find(
+            (entity: SceneEntity) => entity.attributes.id === id
+          );
+
+        if (!scene) {
+          try {
+            await new Promise<void>((resolve, reject) => {
+              setTimeout(reject, 3000);
+              this._scenesSet = resolve;
+            });
+            scene = this.scenes.find(
+              (entity: SceneEntity) => entity.attributes.id === id
+            );
+          } catch (err) {
+            // We do nothing.
+          } finally {
+            this._scenesSet = undefined;
+          }
+        }
+
+        if (scene) {
+          await updateEntityRegistryEntry(this.hass, scene.entity_id, {
+            area_id: this._updatedAreaId,
+          });
+        }
+
+        this._updatedAreaId = undefined;
+      }
+
       this._dirty = false;
 
       if (!this.sceneId) {
         navigate(`/config/scene/edit/${id}`, { replace: true });
       }
-    } catch (err) {
+    } catch (err: any) {
       this._errors = err.body.message || err.message;
       showToast(this, {
         message: err.body.message || err.message,
       });
       throw err;
+    } finally {
+      this._saving = false;
     }
   }
 
   protected handleKeyboardSave() {
     this._saveScene();
+  }
+
+  private get _sceneAreaIdWithUpdates(): string | undefined | null {
+    return this._updatedAreaId !== undefined
+      ? this._updatedAreaId
+      : this._sceneAreaIdCurrent;
+  }
+
+  private get _sceneAreaIdCurrent(): string | undefined | null {
+    return this._scene
+      ? this._getRegistryAreaId(
+          this._entityRegistryEntries,
+          this._scene.entity_id
+        )
+      : undefined;
   }
 
   static get styles(): CSSResultGroup {
@@ -817,6 +953,14 @@ export class HaSceneEditor extends SubscribeMixin(
       css`
         ha-card {
           overflow: hidden;
+        }
+        .container {
+          padding: 28px 20px 0;
+          max-width: 1040px;
+          margin: 0 auto;
+        }
+        .narrow.container {
+          max-width: 640px;
         }
         .errors {
           padding: 20px;
@@ -876,6 +1020,18 @@ export class HaSceneEditor extends SubscribeMixin(
         }
         ha-fab.dirty {
           bottom: 0;
+        }
+        ha-fab.saving {
+          opacity: var(--light-disabled-opacity);
+        }
+        ha-icon-picker,
+        ha-area-picker,
+        ha-entity-picker {
+          display: block;
+          margin-top: 8px;
+        }
+        ha-textfield {
+          display: block;
         }
       `,
     ];

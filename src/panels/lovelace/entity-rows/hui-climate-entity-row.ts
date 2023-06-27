@@ -4,7 +4,7 @@ import {
   html,
   LitElement,
   PropertyValues,
-  TemplateResult,
+  nothing,
 } from "lit";
 import { customElement, property, state } from "lit/decorators";
 import "../../../components/ha-climate-state";
@@ -32,9 +32,9 @@ class HuiClimateEntityRow extends LitElement implements LovelaceRow {
     return hasConfigOrEntityChanged(this, changedProps);
   }
 
-  protected render(): TemplateResult {
+  protected render() {
     if (!this.hass || !this._config) {
-      return html``;
+      return nothing;
     }
 
     const stateObj = this.hass.states[this._config.entity];
@@ -49,10 +49,8 @@ class HuiClimateEntityRow extends LitElement implements LovelaceRow {
 
     return html`
       <hui-generic-entity-row .hass=${this.hass} .config=${this._config}>
-        <ha-climate-state
-          .hass=${this.hass}
-          .stateObj=${stateObj}
-        ></ha-climate-state>
+        <ha-climate-state .hass=${this.hass} .stateObj=${stateObj}>
+        </ha-climate-state>
       </hui-generic-entity-row>
     `;
   }

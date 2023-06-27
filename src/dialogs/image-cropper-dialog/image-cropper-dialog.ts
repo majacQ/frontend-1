@@ -39,6 +39,7 @@ export class HaImagecropperDialog extends LitElement {
     this._open = false;
     this._params = undefined;
     this._cropper?.destroy();
+    this._cropper = undefined;
   }
 
   protected updated(changedProperties: PropertyValues) {
@@ -73,7 +74,7 @@ export class HaImagecropperDialog extends LitElement {
           round: Boolean(this._params?.options.round),
         })}"
       >
-        <img />
+        <img alt=${this.hass.localize("ui.dialogs.image_cropper.crop_image")} />
       </div>
       <mwc-button slot="secondaryAction" @click=${this.closeDialog}>
         ${this.hass.localize("ui.common.cancel")}

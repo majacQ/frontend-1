@@ -1,23 +1,22 @@
 import "@material/mwc-button";
-import "@polymer/paper-dropdown-menu/paper-dropdown-menu-light";
-import "@polymer/paper-item/paper-item";
-import "@polymer/paper-listbox/paper-listbox";
-import { css, CSSResultGroup, html, LitElement, TemplateResult } from "lit";
+import "@material/mwc-list/mwc-list-item";
+import { css, CSSResultGroup, html, LitElement, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators";
 import memoizeOne from "memoize-one";
 import { fireEvent } from "../../../../common/dom/fire_event";
-import { caseInsensitiveCompare } from "../../../../common/string/compare";
 import "../../../../components/ha-card";
+import "../../../../components/ha-select";
 import "../../../../components/ha-svg-icon";
 import "../../../../components/ha-switch";
+import "../../../../components/ha-language-picker";
+import { CloudStatusLoggedIn, updateCloudPref } from "../../../../data/cloud";
 import {
-  CloudStatusLoggedIn,
   CloudTTSInfo,
   getCloudTTSInfo,
-  updateCloudPref,
-} from "../../../../data/cloud";
+  getCloudTtsLanguages,
+  getCloudTtsSupportedGenders,
+} from "../../../../data/cloud/tts";
 import { showAlertDialog } from "../../../../dialogs/generic/show-dialog-box";
-import { translationMetadata } from "../../../../resources/translations-metadata";
 import type { HomeAssistant } from "../../../../types";
 import { showTryTtsDialog } from "./show-dialog-cloud-tts-try";
 
@@ -31,17 +30,22 @@ export class CloudTTSPref extends LitElement {
 
   @state() private ttsInfo?: CloudTTSInfo;
 
-  protected render(): TemplateResult {
-    if (!this.cloudStatus) {
-      return html``;
+  protected render() {
+    if (!this.cloudStatus || !this.ttsInfo) {
+      return nothing;
     }
 
     const languages = this.getLanguages(this.ttsInfo);
     const defaultVoice = this.cloudStatus.prefs.tts_default_voice;
-    const genders = this.getSupportedGenders(defaultVoice[0], this.ttsInfo);
+    const genders = this.getSupportedGenders(
+      defaultVoice[0],
+      this.ttsInfo,
+      this.hass.localize
+    );
 
     return html`
       <ha-card
+        outlined
         header=${this.hass.localize("ui.panel.config.cloud.account.tts.title")}
       >
         <div class="card-content">
@@ -51,39 +55,33 @@ export class CloudTTSPref extends LitElement {
             '"tts.cloud_say"'
           )}
           <br /><br />
-
-          <paper-dropdown-menu-light
-            .label=${this.hass.localize(
-              "ui.panel.config.cloud.account.tts.default_language"
-            )}
-            .disabled=${this.savingPreferences}
-          >
-            <paper-listbox
-              slot="dropdown-content"
-              .selected=${defaultVoice[0]}
-              attr-for-selected="value"
-              @iron-select=${this._handleLanguageChange}
-            >
-              ${languages.map(
-                ([key, label]) =>
-                  html`<paper-item .value=${key}>${label}</paper-item>`
+          <div class="row">
+            <ha-language-picker
+              .hass=${this.hass}
+              .label=${this.hass.localize(
+                "ui.panel.config.cloud.account.tts.default_language"
               )}
-            </paper-listbox>
-          </paper-dropdown-menu-light>
+              .disabled=${this.savingPreferences}
+              .value=${defaultVoice[0]}
+              .languages=${languages}
+              @value-changed=${this._handleLanguageChange}
+            >
+            </ha-language-picker>
 
-          <paper-dropdown-menu-light .disabled=${this.savingPreferences}>
-            <paper-listbox
-              slot="dropdown-content"
-              .selected=${defaultVoice[1]}
-              attr-for-selected="value"
-              @iron-select=${this._handleGenderChange}
+            <ha-select
+              .label=${this.hass.localize(
+                "ui.panel.config.cloud.account.tts.default_gender"
+              )}
+              .disabled=${this.savingPreferences}
+              .value=${defaultVoice[1]}
+              @selected=${this._handleGenderChange}
             >
               ${genders.map(
                 ([key, label]) =>
-                  html`<paper-item .value=${key}>${label}</paper-item>`
+                  html`<mwc-list-item .value=${key}>${label}</mwc-list-item>`
               )}
-            </paper-listbox>
-          </paper-dropdown-menu-light>
+            </ha-select>
+          </div>
         </div>
         <div class="card-actions">
           <mwc-button @click=${this._openTryDialog}>
@@ -94,75 +92,21 @@ export class CloudTTSPref extends LitElement {
     `;
   }
 
-  protected firstUpdated(changedProps) {
-    super.firstUpdated(changedProps);
-    getCloudTTSInfo(this.hass).then((info) => {
-      this.ttsInfo = info;
-    });
-  }
-
-  protected updated(changedProps) {
-    super.updated(changedProps);
+  protected willUpdate(changedProps) {
+    super.willUpdate(changedProps);
+    if (!this.hasUpdated) {
+      getCloudTTSInfo(this.hass).then((info) => {
+        this.ttsInfo = info;
+      });
+    }
     if (changedProps.has("cloudStatus")) {
       this.savingPreferences = false;
     }
   }
 
-  private getLanguages = memoizeOne((info?: CloudTTSInfo) => {
-    const languages: Array<[string, string]> = [];
+  private getLanguages = memoizeOne(getCloudTtsLanguages);
 
-    if (!info) {
-      return languages;
-    }
-
-    const seen = new Set<string>();
-    for (const [lang] of info.languages) {
-      if (seen.has(lang)) {
-        continue;
-      }
-      seen.add(lang);
-
-      let label = lang;
-
-      if (lang in translationMetadata.translations) {
-        label = translationMetadata.translations[lang].nativeName;
-      } else {
-        const [langFamily, dialect] = lang.split("-");
-        if (langFamily in translationMetadata.translations) {
-          label = `${translationMetadata.translations[langFamily].nativeName}`;
-
-          if (langFamily.toLowerCase() !== dialect.toLowerCase()) {
-            label += ` (${dialect})`;
-          }
-        }
-      }
-
-      languages.push([lang, label]);
-    }
-    return languages.sort((a, b) => caseInsensitiveCompare(a[1], b[1]));
-  });
-
-  private getSupportedGenders = memoizeOne(
-    (language: string, info?: CloudTTSInfo) => {
-      const genders: Array<[string, string]> = [];
-
-      if (!info) {
-        return genders;
-      }
-
-      for (const [curLang, gender] of info.languages) {
-        if (curLang === language) {
-          genders.push([
-            gender,
-            this.hass.localize(`ui.panel.config.cloud.account.tts.${gender}`) ||
-              gender,
-          ]);
-        }
-      }
-
-      return genders.sort((a, b) => caseInsensitiveCompare(a[1], b[1]));
-    }
-  );
+  private getSupportedGenders = memoizeOne(getCloudTtsSupportedGenders);
 
   private _openTryDialog() {
     showTryTtsDialog(this, {
@@ -171,14 +115,18 @@ export class CloudTTSPref extends LitElement {
   }
 
   async _handleLanguageChange(ev) {
-    if (ev.detail.item.value === this.cloudStatus!.prefs.tts_default_voice[0]) {
+    if (ev.detail.value === this.cloudStatus!.prefs.tts_default_voice[0]) {
       return;
     }
     this.savingPreferences = true;
-    const language = ev.detail.item.value;
+    const language = ev.detail.value;
 
     const curGender = this.cloudStatus!.prefs.tts_default_voice[1];
-    const genders = this.getSupportedGenders(language, this.ttsInfo);
+    const genders = this.getSupportedGenders(
+      language,
+      this.ttsInfo,
+      this.hass.localize
+    );
     const newGender = genders.find((item) => item[0] === curGender)
       ? curGender
       : genders[0][0];
@@ -188,7 +136,7 @@ export class CloudTTSPref extends LitElement {
         tts_default_voice: [language, newGender],
       });
       fireEvent(this, "ha-refresh-cloud-status");
-    } catch (err) {
+    } catch (err: any) {
       this.savingPreferences = false;
       // eslint-disable-next-line no-console
       console.error(err);
@@ -200,19 +148,19 @@ export class CloudTTSPref extends LitElement {
   }
 
   async _handleGenderChange(ev) {
-    if (ev.detail.item.value === this.cloudStatus!.prefs.tts_default_voice[1]) {
+    if (ev.target.value === this.cloudStatus!.prefs.tts_default_voice[1]) {
       return;
     }
     this.savingPreferences = true;
     const language = this.cloudStatus!.prefs.tts_default_voice[0];
-    const gender = ev.detail.item.value;
+    const gender = ev.target.value;
 
     try {
       await updateCloudPref(this.hass, {
         tts_default_voice: [language, gender],
       });
       fireEvent(this, "ha-refresh-cloud-status");
-    } catch (err) {
+    } catch (err: any) {
       this.savingPreferences = false;
       // eslint-disable-next-line no-console
       console.error(err);
@@ -236,6 +184,22 @@ export class CloudTTSPref extends LitElement {
       :host([dir="rtl"]) .example {
         right: auto;
         left: 24px;
+      }
+      .row {
+        display: flex;
+      }
+      .row > * {
+        flex: 1;
+      }
+      .row > *:first-child {
+        margin-right: 8px;
+      }
+      .row > *:last-child {
+        margin-left: 8px;
+      }
+      .card-actions {
+        display: flex;
+        flex-direction: row-reverse;
       }
     `;
   }

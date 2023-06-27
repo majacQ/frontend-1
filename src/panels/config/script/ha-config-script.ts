@@ -1,9 +1,12 @@
+import { consume } from "@lit-labs/context";
 import { HassEntities } from "home-assistant-js-websocket";
 import { PropertyValues } from "lit";
-import { customElement, property } from "lit/decorators";
+import { customElement, property, state } from "lit/decorators";
 import memoizeOne from "memoize-one";
 import { computeStateDomain } from "../../../common/entity/compute_state_domain";
 import { debounce } from "../../../common/util/debounce";
+import { fullEntitiesContext } from "../../../data/context";
+import { EntityRegistryEntry } from "../../../data/entity_registry";
 import { ScriptEntity } from "../../../data/script";
 import {
   HassRouterPage,
@@ -32,6 +35,10 @@ class HaConfigScript extends HassRouterPage {
 
   @property() public scripts: ScriptEntity[] = [];
 
+  @state()
+  @consume({ context: fullEntitiesContext, subscribe: true })
+  _entityReg!: EntityRegistryEntry[];
+
   protected routerOptions: RouterOptions = {
     defaultPage: "dashboard",
     routes: {
@@ -41,6 +48,13 @@ class HaConfigScript extends HassRouterPage {
       },
       edit: {
         tag: "ha-script-editor",
+      },
+      show: {
+        tag: "ha-script-editor",
+      },
+      trace: {
+        tag: "ha-script-trace",
+        load: () => import("./ha-script-trace"),
       },
     },
   };
@@ -55,7 +69,8 @@ class HaConfigScript extends HassRouterPage {
   private _getScripts = memoizeOne(
     (states: HassEntities): ScriptEntity[] =>
       Object.values(states).filter(
-        (entity) => computeStateDomain(entity) === "script"
+        (entity) =>
+          computeStateDomain(entity) === "script" && !entity.attributes.restored
       ) as ScriptEntity[]
   );
 
@@ -70,6 +85,7 @@ class HaConfigScript extends HassRouterPage {
     pageEl.isWide = this.isWide;
     pageEl.route = this.routeTail;
     pageEl.showAdvanced = this.showAdvanced;
+    pageEl.entityRegistry = this._entityReg;
 
     if (this.hass) {
       if (!pageEl.scripts || !changedProps) {
@@ -81,11 +97,21 @@ class HaConfigScript extends HassRouterPage {
 
     if (
       (!changedProps || changedProps.has("route")) &&
-      this._currentPage === "edit"
+      this._currentPage === "show"
     ) {
       pageEl.creatingNew = undefined;
-      const scriptEntityId = this.routeTail.path.substr(1);
-      pageEl.scriptEntityId = scriptEntityId === "new" ? null : scriptEntityId;
+      const scriptId = this.routeTail.path.substr(1);
+      pageEl.entityId = scriptId === "new" ? null : scriptId;
+      return;
+    }
+
+    if (
+      (!changedProps || changedProps.has("route")) &&
+      this._currentPage !== "dashboard"
+    ) {
+      pageEl.creatingNew = undefined;
+      const scriptId = this.routeTail.path.substr(1);
+      pageEl.scriptId = scriptId === "new" ? null : scriptId;
     }
   }
 }

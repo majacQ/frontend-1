@@ -1,11 +1,20 @@
-import { html, LitElement, PropertyValues, TemplateResult } from "lit";
-import { customElement, property, state, query } from "lit/decorators";
+import {
+  css,
+  CSSResultGroup,
+  html,
+  LitElement,
+  PropertyValues,
+  nothing,
+} from "lit";
+import { customElement, property, state } from "lit/decorators";
+import { computeStateName } from "../../../common/entity/compute_state_name";
 import "../../../components/ha-date-input";
-import type { HaDateInput } from "../../../components/ha-date-input";
-import "../../../components/paper-time-input";
-import type { PaperTimeInput } from "../../../components/paper-time-input";
-import { UNAVAILABLE_STATES, UNKNOWN } from "../../../data/entity";
-import { setInputDateTimeValue } from "../../../data/input_datetime";
+import "../../../components/ha-time-input";
+import { isUnavailableState, UNKNOWN } from "../../../data/entity";
+import {
+  setInputDateTimeValue,
+  stateToIsoDateString,
+} from "../../../data/input_datetime";
 import type { HomeAssistant } from "../../../types";
 import { hasConfigOrEntityChanged } from "../common/has-changed";
 import "../components/hui-generic-entity-row";
@@ -18,10 +27,6 @@ class HuiInputDatetimeEntityRow extends LitElement implements LovelaceRow {
 
   @state() private _config?: EntityConfig;
 
-  @query("paper-time-input") private _timeInputEl?: PaperTimeInput;
-
-  @query("ha-date-input") private _dateInputEl?: HaDateInput;
-
   public setConfig(config: EntityConfig): void {
     if (!config) {
       throw new Error("Invalid configuration");
@@ -33,9 +38,9 @@ class HuiInputDatetimeEntityRow extends LitElement implements LovelaceRow {
     return hasConfigOrEntityChanged(this, changedProps);
   }
 
-  protected render(): TemplateResult {
+  protected render() {
     if (!this._config || !this.hass) {
-      return html``;
+      return nothing;
     }
 
     const stateObj = this.hass.states[this._config.entity];
@@ -48,36 +53,48 @@ class HuiInputDatetimeEntityRow extends LitElement implements LovelaceRow {
       `;
     }
 
+    const name = this._config.name || computeStateName(stateObj);
+
     return html`
-      <hui-generic-entity-row .hass=${this.hass} .config=${this._config}>
-        ${stateObj.attributes.has_date
-          ? html`
-              <ha-date-input
-                .disabled=${UNAVAILABLE_STATES.includes(stateObj.state)}
-                .value=${`${stateObj.attributes.year}-${stateObj.attributes.month}-${stateObj.attributes.day}`}
-                @value-changed=${this._selectedValueChanged}
-              >
-              </ha-date-input>
-              ${stateObj.attributes.has_time ? "," : ""}
-            `
-          : ``}
-        ${stateObj.attributes.has_time
-          ? html`
-              <paper-time-input
-                .disabled=${UNAVAILABLE_STATES.includes(stateObj.state)}
-                .hour=${stateObj.state === UNKNOWN
-                  ? ""
-                  : ("0" + stateObj.attributes.hour).slice(-2)}
-                .min=${stateObj.state === UNKNOWN
-                  ? ""
-                  : ("0" + stateObj.attributes.minute).slice(-2)}
-                @change=${this._selectedValueChanged}
-                @click=${this._stopEventPropagation}
-                hide-label
-                .format=${24}
-              ></paper-time-input>
-            `
-          : ``}
+      <hui-generic-entity-row
+        .hass=${this.hass}
+        .config=${this._config}
+        .hideName=${stateObj.attributes.has_date &&
+        stateObj.attributes.has_time}
+      >
+        <div
+          class=${stateObj.attributes.has_date && stateObj.attributes.has_time
+            ? "both"
+            : ""}
+        >
+          ${stateObj.attributes.has_date
+            ? html`
+                <ha-date-input
+                  .label=${stateObj.attributes.has_time ? name : undefined}
+                  .locale=${this.hass.locale}
+                  .disabled=${isUnavailableState(stateObj.state)}
+                  .value=${stateToIsoDateString(stateObj)}
+                  @value-changed=${this._dateChanged}
+                >
+                </ha-date-input>
+              `
+            : ``}
+          ${stateObj.attributes.has_time
+            ? html`
+                <ha-time-input
+                  .value=${stateObj.state === UNKNOWN
+                    ? ""
+                    : stateObj.attributes.has_date
+                    ? stateObj.state.split(" ")[1]
+                    : stateObj.state}
+                  .locale=${this.hass.locale}
+                  .disabled=${isUnavailableState(stateObj.state)}
+                  @value-changed=${this._timeChanged}
+                  @click=${this._stopEventPropagation}
+                ></ha-time-input>
+              `
+            : ``}
+        </div>
       </hui-generic-entity-row>
     `;
   }
@@ -86,18 +103,41 @@ class HuiInputDatetimeEntityRow extends LitElement implements LovelaceRow {
     ev.stopPropagation();
   }
 
-  private _selectedValueChanged(ev): void {
+  private _timeChanged(ev: CustomEvent<{ value: string }>): void {
+    const stateObj = this.hass!.states[this._config!.entity];
+    setInputDateTimeValue(
+      this.hass!,
+      stateObj.entity_id,
+      ev.detail.value,
+      stateObj.attributes.has_date ? stateObj.state.split(" ")[0] : undefined
+    );
+  }
+
+  private _dateChanged(ev: CustomEvent<{ value: string }>): void {
     const stateObj = this.hass!.states[this._config!.entity];
 
-    const time = this._timeInputEl
-      ? this._timeInputEl.value?.trim()
-      : undefined;
+    setInputDateTimeValue(
+      this.hass!,
+      stateObj.entity_id,
+      stateObj.attributes.has_time ? stateObj.state.split(" ")[1] : undefined,
+      ev.detail.value
+    );
+  }
 
-    const date = this._dateInputEl ? this._dateInputEl.value : undefined;
-
-    setInputDateTimeValue(this.hass!, stateObj.entity_id, time, date);
-
-    ev.target.blur();
+  static get styles(): CSSResultGroup {
+    return css`
+      ha-date-input + ha-time-input {
+        margin-left: 4px;
+        margin-inline-start: 4px;
+        margin-inline-end: initial;
+        direction: var(--direction);
+      }
+      div.both {
+        display: flex;
+        justify-content: flex-end;
+        width: 100%;
+      }
+    `;
   }
 }
 

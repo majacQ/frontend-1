@@ -1,6 +1,6 @@
 import "@material/mwc-button/mwc-button";
 import { UnsubscribeFunc } from "home-assistant-js-websocket";
-import { css, CSSResultGroup, html, LitElement } from "lit";
+import { css, CSSResultGroup, html, LitElement, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators";
 import { classMap } from "lit/directives/class-map";
 import { debounce } from "../../../common/util/debounce";
@@ -10,6 +10,7 @@ import {
   RenderTemplateResult,
   subscribeRenderTemplate,
 } from "../../../data/ws-templates";
+import { showConfirmationDialog } from "../../../dialogs/generic/show-dialog-box";
 import { haStyle } from "../../../resources/styles";
 import { HomeAssistant } from "../../../types";
 import { documentationUrl } from "../../../util/documentation-url";
@@ -25,7 +26,7 @@ The temperature is {{ my_test_json.temperature }} {{ my_test_json.unit }}.
 {% if is_state("sun.sun", "above_horizon") -%}
   The sun rose {{ relative_time(states.sun.sun.last_changed) }} ago.
 {%- else -%}
-  The sun will rise at {{ as_timestamp(strptime(state_attr("sun.sun", "next_rising"), "")) | timestamp_local }}.
+  The sun will rise at {{ as_timestamp(state_attr("sun.sun", "next_rising")) | timestamp_local }}.
 {%- endif %}
 
 For loop example getting entity values in the weather domain:
@@ -108,10 +109,10 @@ class HaPanelDevTemplate extends LitElement {
             </li>
             <li>
               <a
-                href="${documentationUrl(
+                href=${documentationUrl(
                   this.hass,
                   "/docs/configuration/templating/"
-                )}"
+                )}
                 target="_blank"
                 rel="noreferrer"
               >
@@ -128,15 +129,22 @@ class HaPanelDevTemplate extends LitElement {
           </p>
           <ha-code-editor
             mode="jinja2"
+            .hass=${this.hass}
             .value=${this._template}
             .error=${this._error}
             autofocus
+            autocomplete-entities
+            autocomplete-icons
             @value-changed=${this._templateChanged}
+            dir="ltr"
           ></ha-code-editor>
           <mwc-button @click=${this._restoreDemo}>
             ${this.hass.localize(
               "ui.panel.developer-tools.tabs.templates.reset"
             )}
+          </mwc-button>
+          <mwc-button @click=${this._clear}>
+            ${this.hass.localize("ui.common.clear")}
           </mwc-button>
         </div>
 
@@ -227,7 +235,7 @@ class HaPanelDevTemplate extends LitElement {
                   "ui.panel.developer-tools.tabs.templates.no_listeners"
                 )}
               </span>`
-            : html``}
+            : nothing}
         </div>
       </div>
     `;
@@ -245,11 +253,17 @@ class HaPanelDevTemplate extends LitElement {
 
         .content {
           padding: 16px;
-          direction: ltr;
+          padding: max(16px, env(safe-area-inset-top))
+            max(16px, env(safe-area-inset-right))
+            max(16px, env(safe-area-inset-bottom))
+            max(16px, env(safe-area-inset-left));
         }
 
         .edit-pane {
           margin-right: 16px;
+          margin-inline-start: initial;
+          margin-inline-end: 16px;
+          direction: var(--direction);
         }
 
         .edit-pane a {
@@ -277,6 +291,7 @@ class HaPanelDevTemplate extends LitElement {
           white-space: pre-wrap;
           background-color: var(--secondary-background-color);
           padding: 8px;
+          direction: ltr;
         }
 
         .all_listeners {
@@ -285,6 +300,12 @@ class HaPanelDevTemplate extends LitElement {
 
         .rendered.error {
           color: var(--error-color);
+        }
+
+        @media all and (max-width: 870px) {
+          .render-pane {
+            max-width: 100%;
+          }
         }
       `,
     ];
@@ -320,10 +341,11 @@ class HaPanelDevTemplate extends LitElement {
         {
           template: this._template,
           timeout: 3,
+          strict: true,
         }
       );
       await this._unsubRenderTemplate;
-    } catch (err) {
+    } catch (err: any) {
       this._error = "Unknown error";
       if (err.message) {
         this._error = err.message;
@@ -344,11 +366,11 @@ class HaPanelDevTemplate extends LitElement {
       const unsub = await this._unsubRenderTemplate;
       unsub();
       this._unsubRenderTemplate = undefined;
-    } catch (e) {
-      if (e.code === "not_found") {
+    } catch (err: any) {
+      if (err.code === "not_found") {
         // If we get here, the connection was probably already closed. Ignore.
       } else {
-        throw e;
+        throw err;
       }
     }
   }
@@ -360,10 +382,41 @@ class HaPanelDevTemplate extends LitElement {
     localStorage["panel-dev-template-template"] = this._template;
   }
 
-  private _restoreDemo() {
+  private async _restoreDemo() {
+    if (
+      !(await showConfirmationDialog(this, {
+        text: this.hass.localize(
+          "ui.panel.developer-tools.tabs.templates.confirm_reset"
+        ),
+        warning: true,
+      }))
+    ) {
+      return;
+    }
     this._template = DEMO_TEMPLATE;
     this._subscribeTemplate();
     delete localStorage["panel-dev-template-template"];
+  }
+
+  private async _clear() {
+    if (
+      !(await showConfirmationDialog(this, {
+        text: this.hass.localize(
+          "ui.panel.developer-tools.tabs.templates.confirm_clear"
+        ),
+        warning: true,
+      }))
+    ) {
+      return;
+    }
+    this._unsubscribeTemplate();
+    this._template = "";
+    // Reset to empty result. Setting to 'undefined' results in a different visual
+    // behaviour compared to manually emptying the template input box.
+    this._templateResult = {
+      result: "",
+      listeners: { all: false, entities: [], domains: [], time: false },
+    };
   }
 }
 

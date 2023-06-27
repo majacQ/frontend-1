@@ -1,34 +1,22 @@
-import {
-  css,
-  CSSResultGroup,
-  html,
-  LitElement,
-  PropertyValues,
-  TemplateResult,
-} from "lit";
+import { css, html, LitElement, PropertyValues, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators";
-import { classMap } from "lit/directives/class-map";
-import { DOMAINS_HIDE_MORE_INFO } from "../../../common/const";
-import { computeDomain } from "../../../common/entity/compute_domain";
-import { computeStateDisplay } from "../../../common/entity/compute_state_display";
-import { ActionHandlerEvent } from "../../../data/lovelace";
+import { computeStateName } from "../../../common/entity/compute_state_name";
+import "../../../components/ha-textfield";
+import { isUnavailableState, UNAVAILABLE } from "../../../data/entity";
+import { setValue, TextEntity } from "../../../data/text";
 import { HomeAssistant } from "../../../types";
-import { EntitiesCardEntityConfig } from "../cards/types";
-import { actionHandler } from "../common/directives/action-handler-directive";
-import { handleAction } from "../common/handle-action";
-import { hasAction } from "../common/has-action";
 import { hasConfigOrEntityChanged } from "../common/has-changed";
 import "../components/hui-generic-entity-row";
 import { createEntityNotFoundWarning } from "../components/hui-warning";
-import { LovelaceRow } from "./types";
+import { EntityConfig, LovelaceRow } from "./types";
 
 @customElement("hui-text-entity-row")
 class HuiTextEntityRow extends LitElement implements LovelaceRow {
   @property({ attribute: false }) public hass?: HomeAssistant;
 
-  @state() private _config?: EntitiesCardEntityConfig;
+  @state() private _config?: EntityConfig;
 
-  public setConfig(config: EntitiesCardEntityConfig): void {
+  public setConfig(config: EntityConfig): void {
     if (!config) {
       throw new Error("Invalid configuration");
     }
@@ -39,12 +27,14 @@ class HuiTextEntityRow extends LitElement implements LovelaceRow {
     return hasConfigOrEntityChanged(this, changedProps);
   }
 
-  protected render(): TemplateResult {
+  protected render() {
     if (!this._config || !this.hass) {
-      return html``;
+      return nothing;
     }
 
-    const stateObj = this.hass.states[this._config.entity];
+    const stateObj = this.hass.states[this._config.entity] as
+      | TextEntity
+      | undefined;
 
     if (!stateObj) {
       return html`
@@ -54,47 +44,54 @@ class HuiTextEntityRow extends LitElement implements LovelaceRow {
       `;
     }
 
-    const pointer =
-      (this._config.tap_action && this._config.tap_action.action !== "none") ||
-      (this._config.entity &&
-        !DOMAINS_HIDE_MORE_INFO.includes(computeDomain(this._config.entity)));
-
     return html`
-      <hui-generic-entity-row .hass=${this.hass} .config=${this._config}>
-        <div
-          class="text-content ${classMap({
-            pointer,
-          })}"
-          @action=${this._handleAction}
-          .actionHandler=${actionHandler({
-            hasHold: hasAction(this._config.hold_action),
-            hasDoubleClick: hasAction(this._config.double_tap_action),
-          })}
-        >
-          ${computeStateDisplay(
-            this.hass!.localize,
-            stateObj,
-            this.hass.locale
-          )}
-        </div>
+      <hui-generic-entity-row
+        .hass=${this.hass}
+        .config=${this._config}
+        hideName
+      >
+        <ha-textfield
+          .label=${this._config.name || computeStateName(stateObj)}
+          .disabled=${stateObj.state === UNAVAILABLE}
+          .value=${stateObj.state}
+          .minlength=${stateObj.attributes.min}
+          .maxlength=${stateObj.attributes.max}
+          .autoValidate=${stateObj.attributes.pattern}
+          .pattern=${stateObj.attributes.pattern}
+          .type=${stateObj.attributes.mode}
+          @change=${this._valueChanged}
+          placeholder=${this.hass!.localize("ui.card.text.emtpy_value")}
+        ></ha-textfield>
       </hui-generic-entity-row>
     `;
   }
 
-  private _handleAction(ev: ActionHandlerEvent) {
-    handleAction(this, this.hass!, this._config!, ev.detail.action);
+  private _valueChanged(ev): void {
+    const stateObj = this.hass!.states[this._config!.entity] as TextEntity;
+    const newValue = ev.target.value;
+
+    // Filter out invalid text states
+    if (newValue && isUnavailableState(newValue)) {
+      ev.target.value = stateObj.state;
+      return;
+    }
+
+    if (newValue !== stateObj.state) {
+      setValue(this.hass!, stateObj.entity_id, newValue);
+    }
+
+    ev.target.blur();
   }
 
-  static get styles(): CSSResultGroup {
-    return css`
-      div {
-        text-align: right;
-      }
-      .pointer {
-        cursor: pointer;
-      }
-    `;
-  }
+  static styles = css`
+    hui-generic-entity-row {
+      display: flex;
+      align-items: center;
+    }
+    ha-textfield {
+      width: 100%;
+    }
+  `;
 }
 
 declare global {

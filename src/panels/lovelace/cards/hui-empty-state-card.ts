@@ -1,5 +1,5 @@
 import "@material/mwc-button/mwc-button";
-import { css, CSSResultGroup, html, LitElement, TemplateResult } from "lit";
+import { css, CSSResultGroup, html, LitElement, nothing } from "lit";
 import { customElement, property } from "lit/decorators";
 import "../../../components/ha-card";
 import { HomeAssistant } from "../../../types";
@@ -18,16 +18,16 @@ export class HuiEmptyStateCard extends LitElement implements LovelaceCard {
     // eslint-disable-next-line
   }
 
-  protected render(): TemplateResult {
+  protected render() {
     if (!this.hass) {
-      return html``;
+      return nothing;
     }
 
     return html`
       <ha-card
-        .header="${this.hass.localize(
+        .header=${this.hass.localize(
           "ui.panel.lovelace.cards.empty_state.title"
-        )}"
+        )}
       >
         <div class="card-content">
           ${this.hass.localize(

@@ -1,15 +1,24 @@
-import { html, LitElement, TemplateResult } from "lit";
+import { css, html, LitElement, nothing } from "lit";
 import { customElement, property } from "lit/decorators";
 import { fireEvent } from "../../common/dom/fire_event";
-import { PolymerChangedEvent } from "../../polymer-types";
-import { HomeAssistant } from "../../types";
+import { ValueChangedEvent, HomeAssistant } from "../../types";
 import "./ha-device-picker";
+import type {
+  HaDevicePickerDeviceFilterFunc,
+  HaDevicePickerEntityFilterFunc,
+} from "./ha-device-picker";
 
 @customElement("ha-devices-picker")
 class HaDevicesPicker extends LitElement {
   @property({ attribute: false }) public hass?: HomeAssistant;
 
   @property() public value?: string[];
+
+  @property() public helper?: string;
+
+  @property({ type: Boolean }) public disabled?: boolean;
+
+  @property({ type: Boolean }) public required?: boolean;
 
   /**
    * Show entities from specific domains.
@@ -35,9 +44,13 @@ class HaDevicesPicker extends LitElement {
 
   @property({ attribute: "pick-device-label" }) public pickDeviceLabel?: string;
 
-  protected render(): TemplateResult {
+  @property() public deviceFilter?: HaDevicePickerDeviceFilterFunc;
+
+  @property() public entityFilter?: HaDevicePickerEntityFilterFunc;
+
+  protected render() {
     if (!this.hass) {
-      return html``;
+      return nothing;
     }
 
     const currentDevices = this._currentDevices;
@@ -49,11 +62,14 @@ class HaDevicesPicker extends LitElement {
               allow-custom-entity
               .curValue=${entityId}
               .hass=${this.hass}
+              .deviceFilter=${this.deviceFilter}
+              .entityFilter=${this.entityFilter}
               .includeDomains=${this.includeDomains}
               .excludeDomains=${this.excludeDomains}
               .includeDeviceClasses=${this.includeDeviceClasses}
               .value=${entityId}
               .label=${this.pickedDeviceLabel}
+              .disabled=${this.disabled}
               @value-changed=${this._deviceChanged}
             ></ha-device-picker>
           </div>
@@ -61,11 +77,18 @@ class HaDevicesPicker extends LitElement {
       )}
       <div>
         <ha-device-picker
+          allow-custom-entity
           .hass=${this.hass}
+          .helper=${this.helper}
+          .deviceFilter=${this.deviceFilter}
+          .entityFilter=${this.entityFilter}
           .includeDomains=${this.includeDomains}
           .excludeDomains=${this.excludeDomains}
+          .excludeDevices=${currentDevices}
           .includeDeviceClasses=${this.includeDeviceClasses}
           .label=${this.pickDeviceLabel}
+          .disabled=${this.disabled}
+          .required=${this.required && !currentDevices.length}
           @value-changed=${this._addDevice}
         ></ha-device-picker>
       </div>
@@ -84,14 +107,14 @@ class HaDevicesPicker extends LitElement {
     this.value = devices;
   }
 
-  private _deviceChanged(event: PolymerChangedEvent<string>) {
+  private _deviceChanged(event: ValueChangedEvent<string>) {
     event.stopPropagation();
     const curValue = (event.currentTarget as any).curValue;
     const newValue = event.detail.value;
-    if (newValue === curValue || newValue !== "") {
+    if (newValue === curValue) {
       return;
     }
-    if (newValue === "") {
+    if (newValue === undefined) {
       this._updateDevices(
         this._currentDevices.filter((dev) => dev !== curValue)
       );
@@ -102,7 +125,7 @@ class HaDevicesPicker extends LitElement {
     }
   }
 
-  private async _addDevice(event: PolymerChangedEvent<string>) {
+  private async _addDevice(event: ValueChangedEvent<string>) {
     event.stopPropagation();
     const toAdd = event.detail.value;
     (event.currentTarget as any).value = "";
@@ -116,6 +139,12 @@ class HaDevicesPicker extends LitElement {
 
     this._updateDevices([...currentDevices, toAdd]);
   }
+
+  static override styles = css`
+    div {
+      margin-top: 8px;
+    }
+  `;
 }
 
 declare global {

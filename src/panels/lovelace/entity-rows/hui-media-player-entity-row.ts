@@ -1,3 +1,16 @@
+import {
+  mdiPause,
+  mdiPlay,
+  mdiPlayPause,
+  mdiPower,
+  mdiSkipNext,
+  mdiSkipPrevious,
+  mdiStop,
+  mdiVolumeHigh,
+  mdiVolumeMinus,
+  mdiVolumeOff,
+  mdiVolumePlus,
+} from "@mdi/js";
 import { HassEntity } from "home-assistant-js-websocket";
 import {
   css,
@@ -5,7 +18,7 @@ import {
   html,
   LitElement,
   PropertyValues,
-  TemplateResult,
+  nothing,
 } from "lit";
 import { customElement, property, state } from "lit/decorators";
 import { computeStateDisplay } from "../../../common/entity/compute_state_display";
@@ -14,24 +27,16 @@ import { computeRTLDirection } from "../../../common/util/compute_rtl";
 import { debounce } from "../../../common/util/debounce";
 import "../../../components/ha-icon-button";
 import "../../../components/ha-slider";
-import { UNAVAILABLE, UNAVAILABLE_STATES, UNKNOWN } from "../../../data/entity";
+import { isUnavailableState, UNAVAILABLE, UNKNOWN } from "../../../data/entity";
 import {
   computeMediaDescription,
+  ControlButton,
   MediaPlayerEntity,
-  SUPPORT_NEXT_TRACK,
-  SUPPORT_PAUSE,
-  SUPPORT_PLAY,
-  SUPPORT_PREVIOUS_TRACK,
-  SUPPORT_STOP,
-  SUPPORT_TURN_OFF,
-  SUPPORT_TURN_ON,
-  SUPPORT_VOLUME_BUTTONS,
-  SUPPORT_VOLUME_MUTE,
-  SUPPORT_VOLUME_SET,
+  MediaPlayerEntityFeature,
 } from "../../../data/media-player";
 import type { HomeAssistant } from "../../../types";
 import { hasConfigOrEntityChanged } from "../common/has-changed";
-import { installResizeObserver } from "../common/install-resize-observer";
+import { loadPolyfillIfNeeded } from "../../../resources/resize-observer.polyfill";
 import "../components/hui-generic-entity-row";
 import { createEntityNotFoundWarning } from "../components/hui-warning";
 import type { EntityConfig, LovelaceRow } from "./types";
@@ -79,9 +84,9 @@ class HuiMediaPlayerEntityRow extends LitElement implements LovelaceRow {
     return hasConfigOrEntityChanged(this, changedProps);
   }
 
-  protected render(): TemplateResult {
+  protected render() {
     if (!this.hass || !this._config) {
-      return html``;
+      return nothing;
     }
 
     const stateObj = this.hass.states[this._config.entity] as MediaPlayerEntity;
@@ -95,38 +100,82 @@ class HuiMediaPlayerEntityRow extends LitElement implements LovelaceRow {
     }
 
     const entityState = stateObj.state;
+    const controlButton = this._computeControlButton(stateObj);
+    const assumedState = stateObj.attributes.assumed_state === true;
 
     const buttons = html`
       ${!this._narrow &&
-      entityState === "playing" &&
-      supportsFeature(stateObj, SUPPORT_PREVIOUS_TRACK)
+      (entityState === "playing" || assumedState) &&
+      supportsFeature(stateObj, MediaPlayerEntityFeature.PREVIOUS_TRACK)
         ? html`
             <ha-icon-button
-              icon="hass:skip-previous"
+              .path=${mdiSkipPrevious}
+              .label=${this.hass.localize(
+                "ui.card.media_player.media_previous_track"
+              )}
               @click=${this._previousTrack}
             ></ha-icon-button>
           `
         : ""}
-      ${(entityState === "playing" &&
-        (supportsFeature(stateObj, SUPPORT_PAUSE) ||
-          supportsFeature(stateObj, SUPPORT_STOP))) ||
-      ((entityState === "paused" || entityState === "idle") &&
-        supportsFeature(stateObj, SUPPORT_PLAY)) ||
-      (entityState === "on" &&
-        (supportsFeature(stateObj, SUPPORT_PLAY) ||
-          supportsFeature(stateObj, SUPPORT_PAUSE)))
+      ${!assumedState &&
+      ((entityState === "playing" &&
+        (supportsFeature(stateObj, MediaPlayerEntityFeature.PAUSE) ||
+          supportsFeature(stateObj, MediaPlayerEntityFeature.STOP))) ||
+        ((entityState === "paused" || entityState === "idle") &&
+          supportsFeature(stateObj, MediaPlayerEntityFeature.PLAY)) ||
+        (entityState === "on" &&
+          (supportsFeature(stateObj, MediaPlayerEntityFeature.PLAY) ||
+            supportsFeature(stateObj, MediaPlayerEntityFeature.PAUSE))))
         ? html`
             <ha-icon-button
-              icon=${this._computeControlIcon(stateObj)}
+              .path=${controlButton.icon}
+              .label=${this.hass.localize(
+                `ui.card.media_player.${controlButton.action}`
+              )}
               @click=${this._playPauseStop}
             ></ha-icon-button>
           `
         : ""}
-      ${entityState === "playing" &&
-      supportsFeature(stateObj, SUPPORT_NEXT_TRACK)
+      ${assumedState && supportsFeature(stateObj, MediaPlayerEntityFeature.PLAY)
         ? html`
             <ha-icon-button
-              icon="hass:skip-next"
+              .path=${mdiPlay}
+              .label=${this.hass.localize(`ui.card.media_player.media_play`)}
+              @click=${this._play}
+            ></ha-icon-button>
+          `
+        : ""}
+      ${assumedState &&
+      supportsFeature(stateObj, MediaPlayerEntityFeature.PAUSE)
+        ? html`
+            <ha-icon-button
+              .path=${mdiPause}
+              .label=${this.hass.localize(`ui.card.media_player.media_pause`)}
+              @click=${this._pause}
+            ></ha-icon-button>
+          `
+        : ""}
+      ${assumedState &&
+      supportsFeature(stateObj, MediaPlayerEntityFeature.STOP) &&
+      !supportsFeature(stateObj, MediaPlayerEntityFeature.VOLUME_SET)
+        ? html`
+            <ha-icon-button
+              .path=${mdiStop}
+              .label=${this.hass.localize(`ui.card.media_player.media_stop`)}
+              @click=${this._stop}
+            ></ha-icon-button>
+          `
+        : ""}
+      ${(entityState === "playing" ||
+        (assumedState &&
+          !supportsFeature(stateObj, MediaPlayerEntityFeature.VOLUME_SET))) &&
+      supportsFeature(stateObj, MediaPlayerEntityFeature.NEXT_TRACK)
+        ? html`
+            <ha-icon-button
+              .path=${mdiSkipNext}
+              .label=${this.hass.localize(
+                "ui.card.media_player.media_next_track"
+              )}
               @click=${this._nextTrack}
             ></ha-icon-button>
           `
@@ -140,52 +189,73 @@ class HuiMediaPlayerEntityRow extends LitElement implements LovelaceRow {
         .hass=${this.hass}
         .config=${this._config}
         .secondaryText=${mediaDescription ||
-        computeStateDisplay(this.hass.localize, stateObj, this.hass.locale)}
+        computeStateDisplay(
+          this.hass.localize,
+          stateObj,
+          this.hass.locale,
+          this.hass.config,
+          this.hass.entities
+        )}
       >
         <div class="controls">
-          ${supportsFeature(stateObj, SUPPORT_TURN_ON) &&
+          ${supportsFeature(stateObj, MediaPlayerEntityFeature.TURN_ON) &&
           entityState === "off" &&
-          !UNAVAILABLE_STATES.includes(entityState)
+          !isUnavailableState(entityState)
             ? html`
                 <ha-icon-button
-                  icon="hass:power"
+                  .path=${mdiPower}
+                  .label=${this.hass.localize("ui.card.media_player.turn_on")}
                   @click=${this._togglePower}
                 ></ha-icon-button>
               `
-            : !supportsFeature(stateObj, SUPPORT_VOLUME_SET) &&
-              !supportsFeature(stateObj, SUPPORT_VOLUME_BUTTONS)
+            : !supportsFeature(stateObj, MediaPlayerEntityFeature.VOLUME_SET) &&
+              !supportsFeature(
+                stateObj,
+                MediaPlayerEntityFeature.VOLUME_BUTTONS
+              )
             ? buttons
             : ""}
-          ${supportsFeature(stateObj, SUPPORT_TURN_OFF) &&
+          ${supportsFeature(stateObj, MediaPlayerEntityFeature.TURN_OFF) &&
           entityState !== "off" &&
-          !UNAVAILABLE_STATES.includes(entityState)
+          !isUnavailableState(entityState)
             ? html`
                 <ha-icon-button
-                  icon="hass:power"
+                  .path=${mdiPower}
+                  .label=${this.hass.localize("ui.card.media_player.turn_off")}
                   @click=${this._togglePower}
                 ></ha-icon-button>
               `
             : ""}
         </div>
       </hui-generic-entity-row>
-      ${(supportsFeature(stateObj, SUPPORT_VOLUME_SET) ||
-        supportsFeature(stateObj, SUPPORT_VOLUME_BUTTONS)) &&
+      ${(supportsFeature(stateObj, MediaPlayerEntityFeature.VOLUME_SET) ||
+        supportsFeature(stateObj, MediaPlayerEntityFeature.VOLUME_BUTTONS)) &&
       ![UNAVAILABLE, UNKNOWN, "off"].includes(entityState)
         ? html`
             <div class="flex">
               <div class="volume">
-                ${supportsFeature(stateObj, SUPPORT_VOLUME_MUTE)
+                ${supportsFeature(
+                  stateObj,
+                  MediaPlayerEntityFeature.VOLUME_MUTE
+                )
                   ? html`
                       <ha-icon-button
-                        .icon=${stateObj.attributes.is_volume_muted
-                          ? "hass:volume-off"
-                          : "hass:volume-high"}
+                        .path=${stateObj.attributes.is_volume_muted
+                          ? mdiVolumeOff
+                          : mdiVolumeHigh}
+                        .label=${this.hass.localize(
+                          `ui.card.media_player.${
+                            stateObj.attributes.is_volume_muted
+                              ? "media_volume_mute"
+                              : "media_volume_unmute"
+                          }`
+                        )}
                         @click=${this._toggleMute}
                       ></ha-icon-button>
                     `
                   : ""}
                 ${!this._veryNarrow &&
-                supportsFeature(stateObj, SUPPORT_VOLUME_SET)
+                supportsFeature(stateObj, MediaPlayerEntityFeature.VOLUME_SET)
                   ? html`
                       <ha-slider
                         .dir=${computeRTLDirection(this.hass!)}
@@ -197,14 +267,23 @@ class HuiMediaPlayerEntityRow extends LitElement implements LovelaceRow {
                       ></ha-slider>
                     `
                   : !this._veryNarrow &&
-                    supportsFeature(stateObj, SUPPORT_VOLUME_BUTTONS)
+                    supportsFeature(
+                      stateObj,
+                      MediaPlayerEntityFeature.VOLUME_BUTTONS
+                    )
                   ? html`
                       <ha-icon-button
-                        icon="hass:volume-minus"
+                        .path=${mdiVolumeMinus}
+                        .label=${this.hass.localize(
+                          "ui.card.media_player.media_volume_down"
+                        )}
                         @click=${this._volumeDown}
                       ></ha-icon-button>
                       <ha-icon-button
-                        icon="hass:volume-plus"
+                        .path=${mdiVolumePlus}
+                        .label=${this.hass.localize(
+                          "ui.card.media_player.media_volume_up"
+                        )}
                         @click=${this._volumeUp}
                       ></ha-icon-button>
                     `
@@ -220,7 +299,7 @@ class HuiMediaPlayerEntityRow extends LitElement implements LovelaceRow {
 
   private async _attachObserver(): Promise<void> {
     if (!this._resizeObserver) {
-      await installResizeObserver();
+      await loadPolyfillIfNeeded();
       this._resizeObserver = new ResizeObserver(
         debounce(() => this._measureCard(), 250, false)
       );
@@ -236,14 +315,14 @@ class HuiMediaPlayerEntityRow extends LitElement implements LovelaceRow {
     this._veryNarrow = (this.clientWidth || 0) < 225;
   }
 
-  private _computeControlIcon(stateObj: HassEntity): string {
+  private _computeControlButton(stateObj: HassEntity): ControlButton {
     return stateObj.state === "on"
-      ? "hass:play-pause"
+      ? { icon: mdiPlayPause, action: "media_play_pause" }
       : stateObj.state !== "playing"
-      ? "hass:play"
-      : supportsFeature(stateObj, SUPPORT_PAUSE)
-      ? "hass:pause"
-      : "hass:stop";
+      ? { icon: mdiPlay, action: "media_play" }
+      : supportsFeature(stateObj, MediaPlayerEntityFeature.PAUSE)
+      ? { icon: mdiPause, action: "media_pause" }
+      : { icon: mdiStop, action: "media_stop" };
   }
 
   private _togglePower(): void {
@@ -264,11 +343,29 @@ class HuiMediaPlayerEntityRow extends LitElement implements LovelaceRow {
     const service =
       stateObj.state !== "playing"
         ? "media_play"
-        : supportsFeature(stateObj, SUPPORT_PAUSE)
+        : supportsFeature(stateObj, MediaPlayerEntityFeature.PAUSE)
         ? "media_pause"
         : "media_stop";
 
     this.hass!.callService("media_player", service, {
+      entity_id: this._config!.entity,
+    });
+  }
+
+  private _play(): void {
+    this.hass!.callService("media_player", "media_play", {
+      entity_id: this._config!.entity,
+    });
+  }
+
+  private _pause(): void {
+    this.hass!.callService("media_player", "media_pause", {
+      entity_id: this._config!.entity,
+    });
+  }
+
+  private _stop(): void {
+    this.hass!.callService("media_player", "media_stop", {
       entity_id: this._config!.entity,
     });
   }
@@ -288,8 +385,8 @@ class HuiMediaPlayerEntityRow extends LitElement implements LovelaceRow {
   private _toggleMute() {
     this.hass!.callService("media_player", "volume_mute", {
       entity_id: this._config!.entity,
-      is_volume_muted: !this.hass!.states[this._config!.entity].attributes
-        .is_volume_muted,
+      is_volume_muted:
+        !this.hass!.states[this._config!.entity].attributes.is_volume_muted,
     });
   }
 
@@ -329,6 +426,7 @@ class HuiMediaPlayerEntityRow extends LitElement implements LovelaceRow {
       }
       .controls {
         white-space: nowrap;
+        direction: ltr;
       }
       ha-slider {
         flex-grow: 2;

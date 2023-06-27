@@ -1,20 +1,20 @@
-import "@polymer/iron-flex-layout/iron-flex-layout-classes";
-import "@polymer/paper-item/paper-item";
-import "@polymer/paper-listbox/paper-listbox";
+import "@material/mwc-list/mwc-list-item";
 import {
   css,
   CSSResultGroup,
   html,
   LitElement,
   PropertyValues,
-  TemplateResult,
+  nothing,
 } from "lit";
 import { property } from "lit/decorators";
 import { classMap } from "lit/directives/class-map";
 import { fireEvent } from "../../../common/dom/fire_event";
+import { computeAttributeValueDisplay } from "../../../common/entity/compute_attribute_display";
+import { stopPropagation } from "../../../common/dom/stop_propagation";
 import { supportsFeature } from "../../../common/entity/supports-feature";
 import { computeRTLDirection } from "../../../common/util/compute_rtl";
-import "../../../components/ha-paper-dropdown-menu";
+import "../../../components/ha-select";
 import "../../../components/ha-slider";
 import "../../../components/ha-switch";
 import {
@@ -30,9 +30,9 @@ class MoreInfoHumidifier extends LitElement {
 
   private _resizeDebounce?: number;
 
-  protected render(): TemplateResult {
+  protected render() {
     if (!this.stateObj) {
-      return html``;
+      return nothing;
     }
 
     const hass = this.hass;
@@ -53,14 +53,12 @@ class MoreInfoHumidifier extends LitElement {
           <div class="single-row">
             <div class="target-humidity">${stateObj.attributes.humidity} %</div>
             <ha-slider
-              class="humidity"
               step="1"
               pin
               ignore-bar-touch
               dir=${rtlDirection}
               .min=${stateObj.attributes.min_humidity}
               .max=${stateObj.attributes.max_humidity}
-              .secondaryProgress=${stateObj.attributes.max_humidity}
               .value=${stateObj.attributes.humidity}
               @change=${this._targetHumiditySliderChanged}
             >
@@ -70,30 +68,30 @@ class MoreInfoHumidifier extends LitElement {
 
         ${supportModes
           ? html`
-              <div class="container-modes">
-                <ha-paper-dropdown-menu
-                  label-float
-                  dynamic-align
-                  .label=${hass.localize("ui.card.humidifier.mode")}
-                >
-                  <paper-listbox
-                    slot="dropdown-content"
-                    attr-for-selected="item-name"
-                    .selected=${stateObj.attributes.mode}
-                    @selected-changed=${this._handleModeChanged}
-                  >
-                    ${stateObj.attributes.available_modes!.map(
-                      (mode) => html`
-                        <paper-item item-name=${mode}>
-                          ${hass.localize(
-                            `state_attributes.humidifier.mode.${mode}`
-                          ) || mode}
-                        </paper-item>
-                      `
-                    )}
-                  </paper-listbox>
-                </ha-paper-dropdown-menu>
-              </div>
+              <ha-select
+                .label=${hass.localize("ui.card.humidifier.mode")}
+                .value=${stateObj.attributes.mode}
+                fixedMenuPosition
+                naturalMenuWidth
+                @selected=${this._handleModeChanged}
+                @closed=${stopPropagation}
+              >
+                ${stateObj.attributes.available_modes!.map(
+                  (mode) => html`
+                    <mwc-list-item .value=${mode}>
+                      ${computeAttributeValueDisplay(
+                        hass.localize,
+                        stateObj,
+                        hass.locale,
+                        this.hass.config,
+                        hass.entities,
+                        "mode",
+                        mode
+                      )}
+                    </mwc-list-item>
+                  `
+                )}
+              </ha-select>
             `
           : ""}
       </div>
@@ -126,7 +124,7 @@ class MoreInfoHumidifier extends LitElement {
   }
 
   private _handleModeChanged(ev) {
-    const newVal = ev.detail.value || null;
+    const newVal = ev.target.value || null;
     this._callServiceHelper(
       this.stateObj!.attributes.mode,
       newVal,
@@ -156,7 +154,9 @@ class MoreInfoHumidifier extends LitElement {
     // We reset stateObj to re-sync the inputs with the state. It will be out
     // of sync if our service call did not result in the entity to be turned
     // on. Since the state is not changing, the resync is not called automatic.
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    await new Promise((resolve) => {
+      setTimeout(resolve, 2000);
+    });
 
     // No need to resync if we received a new state.
     if (this.stateObj !== curState) {
@@ -177,15 +177,7 @@ class MoreInfoHumidifier extends LitElement {
         color: var(--primary-text-color);
       }
 
-      ha-paper-dropdown-menu {
-        width: 100%;
-      }
-
-      paper-item {
-        cursor: pointer;
-      }
-
-      ha-slider {
+      ha-select {
         width: 100%;
       }
 
@@ -201,11 +193,6 @@ class MoreInfoHumidifier extends LitElement {
         direction: ltr;
       }
 
-      .humidity {
-        --paper-slider-active-color: var(--paper-blue-400);
-        --paper-slider-secondary-color: var(--paper-blue-400);
-      }
-
       .single-row {
         padding: 8px 0;
       }
@@ -214,3 +201,9 @@ class MoreInfoHumidifier extends LitElement {
 }
 
 customElements.define("more-info-humidifier", MoreInfoHumidifier);
+
+declare global {
+  interface HTMLElementTagNameMap {
+    "more-info-humidifier": MoreInfoHumidifier;
+  }
+}

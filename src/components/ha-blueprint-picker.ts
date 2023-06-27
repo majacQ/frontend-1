@@ -1,13 +1,18 @@
-import "@polymer/paper-dropdown-menu/paper-dropdown-menu-light";
-import "@polymer/paper-item/paper-item";
-import "@polymer/paper-listbox/paper-listbox";
-import { css, CSSResultGroup, html, LitElement, TemplateResult } from "lit";
+import "@material/mwc-list/mwc-list-item";
+import { css, CSSResultGroup, html, LitElement, nothing } from "lit";
 import { customElement, property } from "lit/decorators";
 import memoizeOne from "memoize-one";
 import { fireEvent } from "../common/dom/fire_event";
-import { compare } from "../common/string/compare";
-import { Blueprint, Blueprints, fetchBlueprints } from "../data/blueprint";
+import { stopPropagation } from "../common/dom/stop_propagation";
+import { stringCompare } from "../common/string/compare";
+import {
+  Blueprint,
+  BlueprintDomain,
+  Blueprints,
+  fetchBlueprints,
+} from "../data/blueprint";
 import { HomeAssistant } from "../types";
+import "./ha-select";
 
 @customElement("ha-blueprint-picker")
 class HaBluePrintPicker extends LitElement {
@@ -17,56 +22,58 @@ class HaBluePrintPicker extends LitElement {
 
   @property() public value = "";
 
-  @property() public domain = "automation";
+  @property() public domain: BlueprintDomain = "automation";
 
   @property() public blueprints?: Blueprints;
 
   @property({ type: Boolean }) public disabled = false;
+
+  public open() {
+    const select = this.shadowRoot?.querySelector("ha-select");
+    if (select) {
+      // @ts-expect-error
+      select.menuOpen = true;
+    }
+  }
 
   private _processedBlueprints = memoizeOne((blueprints?: Blueprints) => {
     if (!blueprints) {
       return [];
     }
     const result = Object.entries(blueprints)
-      .filter(([_path, blueprint]) => !("error" in blueprint))
+      .filter((entry): entry is [string, Blueprint] => !("error" in entry[1]))
       .map(([path, blueprint]) => ({
-        ...(blueprint as Blueprint).metadata,
+        ...blueprint.metadata,
         path,
       }));
-    return result.sort((a, b) => compare(a.name, b.name));
+    return result.sort((a, b) =>
+      stringCompare(a.name, b.name, this.hass!.locale.language)
+    );
   });
 
-  protected render(): TemplateResult {
+  protected render() {
     if (!this.hass) {
-      return html``;
+      return nothing;
     }
     return html`
-      <paper-dropdown-menu-light
+      <ha-select
         .label=${this.label ||
-        this.hass.localize("ui.components.blueprint-picker.label")}
+        this.hass.localize("ui.components.blueprint-picker.select_blueprint")}
+        fixedMenuPosition
+        naturalMenuWidth
+        .value=${this.value}
         .disabled=${this.disabled}
-        horizontal-align="left"
+        @selected=${this._blueprintChanged}
+        @closed=${stopPropagation}
       >
-        <paper-listbox
-          slot="dropdown-content"
-          .selected=${this.value}
-          attr-for-selected="data-blueprint-path"
-          @iron-select=${this._blueprintChanged}
-        >
-          <paper-item data-blueprint-path="">
-            ${this.hass.localize(
-              "ui.components.blueprint-picker.select_blueprint"
-            )}
-          </paper-item>
-          ${this._processedBlueprints(this.blueprints).map(
-            (blueprint) => html`
-              <paper-item data-blueprint-path=${blueprint.path}>
-                ${blueprint.name}
-              </paper-item>
-            `
-          )}
-        </paper-listbox>
-      </paper-dropdown-menu-light>
+        ${this._processedBlueprints(this.blueprints).map(
+          (blueprint) => html`
+            <mwc-list-item .value=${blueprint.path}>
+              ${blueprint.name}
+            </mwc-list-item>
+          `
+        )}
+      </ha-select>
     `;
   }
 
@@ -80,10 +87,10 @@ class HaBluePrintPicker extends LitElement {
   }
 
   private _blueprintChanged(ev) {
-    const newValue = ev.detail.item.dataset.blueprintPath;
+    const newValue = ev.target.value;
 
     if (newValue !== this.value) {
-      this.value = ev.detail.value;
+      this.value = newValue;
       setTimeout(() => {
         fireEvent(this, "value-changed", { value: newValue });
         fireEvent(this, "change");
@@ -96,14 +103,10 @@ class HaBluePrintPicker extends LitElement {
       :host {
         display: inline-block;
       }
-      paper-dropdown-menu-light {
+      ha-select {
         width: 100%;
         min-width: 200px;
         display: block;
-      }
-      paper-item {
-        cursor: pointer;
-        min-width: 200px;
       }
     `;
   }

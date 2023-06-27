@@ -1,20 +1,21 @@
-import { mdiHelpCircle } from "@mdi/js";
+import { mdiClose, mdiHelpCircle } from "@mdi/js";
 import deepFreeze from "deep-freeze";
 import {
   css,
   CSSResultGroup,
   html,
   LitElement,
+  nothing,
   PropertyValues,
-  TemplateResult,
 } from "lit";
-import { customElement, property, state, query } from "lit/decorators";
+import { customElement, property, query, state } from "lit/decorators";
 import type { HASSDomEvent } from "../../../../common/dom/fire_event";
 import { fireEvent } from "../../../../common/dom/fire_event";
 import { computeRTLDirection } from "../../../../common/util/compute_rtl";
 import "../../../../components/ha-circular-progress";
 import "../../../../components/ha-dialog";
-import "../../../../components/ha-header-bar";
+import "../../../../components/ha-dialog-header";
+import "../../../../components/ha-icon-button";
 import type {
   LovelaceCardConfig,
   LovelaceViewConfig,
@@ -47,7 +48,8 @@ declare global {
 @customElement("hui-dialog-edit-card")
 export class HuiDialogEditCard
   extends LitElement
-  implements HassDialog<EditCardDialogParams> {
+  implements HassDialog<EditCardDialogParams>
+{
   @property({ attribute: false }) public hass!: HomeAssistant;
 
   @property({ type: Boolean, reflect: true }) public large = false;
@@ -73,6 +75,8 @@ export class HuiDialogEditCard
 
   @state() private _dirty = false;
 
+  @state() private _isEscapeEnabled = true;
+
   public async showDialog(params: EditCardDialogParams): Promise<void> {
     this._params = params;
     this._GUImode = true;
@@ -91,6 +95,9 @@ export class HuiDialogEditCard
   }
 
   public closeDialog(): boolean {
+    this._isEscapeEnabled = true;
+    window.removeEventListener("dialog-closed", this._enableEscapeKeyClose);
+    window.removeEventListener("hass-more-info", this._disableEscapeKeyClose);
     if (this._dirty) {
       this._confirmCancel();
       return false;
@@ -123,9 +130,19 @@ export class HuiDialogEditCard
     }
   }
 
-  protected render(): TemplateResult {
+  private _enableEscapeKeyClose = (ev: any) => {
+    if (ev.detail.dialog === "ha-more-info-dialog") {
+      this._isEscapeEnabled = true;
+    }
+  };
+
+  private _disableEscapeKeyClose = () => {
+    this._isEscapeEnabled = false;
+  };
+
+  protected render() {
     if (!this._params) {
-      return html``;
+      return nothing;
     }
 
     let heading: string;
@@ -155,33 +172,36 @@ export class HuiDialogEditCard
       <ha-dialog
         open
         scrimClickAction
+        .escapeKeyAction=${this._isEscapeEnabled ? undefined : ""}
         @keydown=${this._ignoreKeydown}
         @closed=${this._cancel}
         @opened=${this._opened}
-        .heading=${true}
+        .heading=${heading}
       >
-        <div slot="heading">
-          <ha-header-bar>
-            <div slot="title" @click=${this._enlarge}>${heading}</div>
-            ${this._documentationURL !== undefined
-              ? html`
-                  <a
-                    slot="actionItems"
-                    class="header_button"
-                    href=${this._documentationURL}
-                    title=${this.hass!.localize("ui.panel.lovelace.menu.help")}
-                    target="_blank"
-                    rel="noreferrer"
-                    dir=${computeRTLDirection(this.hass)}
-                  >
-                    <mwc-icon-button>
-                      <ha-svg-icon .path=${mdiHelpCircle}></ha-svg-icon>
-                    </mwc-icon-button>
-                  </a>
-                `
-              : ""}
-          </ha-header-bar>
-        </div>
+        <ha-dialog-header slot="heading">
+          <ha-icon-button
+            slot="navigationIcon"
+            dialogAction="cancel"
+            .label=${this.hass.localize("ui.common.close")}
+            .path=${mdiClose}
+          ></ha-icon-button>
+          <span slot="title" @click=${this._enlarge}>${heading}</span>
+          ${this._documentationURL !== undefined
+            ? html`
+                <a
+                  slot="actionItems"
+                  class="header_button"
+                  href=${this._documentationURL}
+                  title=${this.hass!.localize("ui.panel.lovelace.menu.help")}
+                  target="_blank"
+                  rel="noreferrer"
+                  dir=${computeRTLDirection(this.hass)}
+                >
+                  <ha-icon-button .path=${mdiHelpCircle}></ha-icon-button>
+                </a>
+              `
+            : nothing}
+        </ha-dialog-header>
         <div class="content">
           <div class="element-editor">
             <hui-card-element-editor
@@ -191,6 +211,7 @@ export class HuiDialogEditCard
               @config-changed=${this._handleConfigChanged}
               @GUImode-changed=${this._handleGUIModeChanged}
               @editor-save=${this._save}
+              dialogInitialFocus
             ></hui-card-element-editor>
           </div>
           <div class="element-preview">
@@ -226,10 +247,10 @@ export class HuiDialogEditCard
             `
           : ""}
         <div slot="primaryAction" @click=${this._save}>
-          <mwc-button @click=${this._cancel}>
+          <mwc-button @click=${this._cancel} dialogInitialFocus>
             ${this.hass!.localize("ui.common.cancel")}
           </mwc-button>
-          ${this._cardConfig !== undefined
+          ${this._cardConfig !== undefined && this._dirty
             ? html`
                 <mwc-button
                   ?disabled=${!this._canSave || this._saving}
@@ -243,9 +264,7 @@ export class HuiDialogEditCard
                           size="small"
                         ></ha-circular-progress>
                       `
-                    : this._dirty
-                    ? this.hass!.localize("ui.common.save")
-                    : this.hass!.localize("ui.common.close")}
+                    : this.hass!.localize("ui.common.save")}
                 </mwc-button>
               `
             : ``}
@@ -280,6 +299,8 @@ export class HuiDialogEditCard
   }
 
   private _opened() {
+    window.addEventListener("dialog-closed", this._enableEscapeKeyClose);
+    window.addEventListener("hass-more-info", this._disableEscapeKeyClose);
     this._cardEditorEl?.focusYamlEditor();
   }
 
@@ -298,7 +319,9 @@ export class HuiDialogEditCard
 
   private async _confirmCancel() {
     // Make sure the open state of this dialog is handled before the open state of confirm dialog
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    await new Promise((resolve) => {
+      setTimeout(resolve, 0);
+    });
     const confirm = await showConfirmationDialog(this, {
       title: this.hass!.localize(
         "ui.panel.lovelace.editor.edit_card.unsaved_changes"
@@ -375,7 +398,7 @@ export class HuiDialogEditCard
 
         ha-dialog {
           --mdc-dialog-max-width: 845px;
-          --dialog-z-index: 5;
+          --dialog-z-index: 6;
         }
 
         @media all and (min-width: 451px) and (min-height: 501px) {
@@ -385,14 +408,6 @@ export class HuiDialogEditCard
           :host([large]) .content {
             width: calc(90vw - 48px);
           }
-        }
-
-        ha-header-bar {
-          --mdc-theme-on-primary: var(--primary-text-color);
-          --mdc-theme-primary: var(--mdc-theme-surface);
-          flex-shrink: 0;
-          border-bottom: 1px solid
-            var(--mdc-dialog-scroll-divider-color, rgba(0, 0, 0, 0.12));
         }
 
         .center {

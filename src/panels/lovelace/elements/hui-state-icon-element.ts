@@ -4,7 +4,7 @@ import {
   html,
   LitElement,
   PropertyValues,
-  TemplateResult,
+  nothing,
 } from "lit";
 import { customElement, property, state } from "lit/decorators";
 import { ifDefined } from "lit/directives/if-defined";
@@ -42,9 +42,9 @@ export class HuiStateIconElement extends LitElement implements LovelaceElement {
     return hasConfigOrEntityChanged(this, changedProps);
   }
 
-  protected render(): TemplateResult {
+  protected render() {
     if (!this._config || !this.hass) {
-      return html``;
+      return nothing;
     }
 
     const stateObj = this.hass.states[this._config.entity!];
@@ -60,7 +60,7 @@ export class HuiStateIconElement extends LitElement implements LovelaceElement {
     return html`
       <state-badge
         .stateObj=${stateObj}
-        .title="${computeTooltip(this.hass, this._config)}"
+        .title=${computeTooltip(this.hass, this._config)}
         @action=${this._handleAction}
         .actionHandler=${actionHandler({
           hasHold: hasAction(this._config!.hold_action),

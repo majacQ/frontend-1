@@ -1,7 +1,7 @@
 import "@material/mwc-button";
 import deepFreeze from "deep-freeze";
 import { html, LitElement, TemplateResult } from "lit";
-import { property, state } from "lit/decorators";
+import { customElement, property, state } from "lit/decorators";
 import { constructUrlCurrentPath } from "../../common/url/construct-url";
 import {
   addSearchParam,
@@ -38,7 +38,8 @@ interface LovelacePanelConfig {
 let editorLoaded = false;
 let resourcesLoaded = false;
 
-class LovelacePanel extends LitElement {
+@customElement("ha-panel-lovelace")
+export class LovelacePanel extends LitElement {
   @property() public panel?: PanelInfo<LovelacePanelConfig>;
 
   @property({ attribute: false }) public hass?: HomeAssistant;
@@ -117,8 +118,8 @@ class LovelacePanel extends LitElement {
       return html`
         <hass-error-screen
           .hass=${this.hass}
-          title="${domainToName(this.hass!.localize, "lovelace")}"
-          .error="${this._errorMsg}"
+          title=${domainToName(this.hass!.localize, "lovelace")}
+          .error=${this._errorMsg}
         >
           <mwc-button raised @click=${this._forceFetchConfig}>
             ${this.hass!.localize("ui.panel.lovelace.reload_lovelace")}
@@ -131,8 +132,8 @@ class LovelacePanel extends LitElement {
       return html`
         <hui-editor
           .hass=${this.hass}
-          .lovelace="${this.lovelace}"
-          .closeEditor="${this._closeEditor}"
+          .lovelace=${this.lovelace}
+          .closeEditor=${this._closeEditor}
         ></hui-editor>
       `;
     }
@@ -229,10 +230,9 @@ class LovelacePanel extends LitElement {
     }
     if (!resourcesLoaded) {
       resourcesLoaded = true;
-      (
-        llWindow.llConfProm || fetchResources(this.hass!.connection)
-      ).then((resources) =>
-        loadLovelaceResources(resources, this.hass!.auth.data.hassUrl)
+      (llWindow.llConfProm || fetchResources(this.hass!.connection)).then(
+        (resources) =>
+          loadLovelaceResources(resources, this.hass!.auth.data.hassUrl)
       );
     }
 
@@ -264,7 +264,7 @@ class LovelacePanel extends LitElement {
       } else {
         conf = rawConf;
       }
-    } catch (err) {
+    } catch (err: any) {
       if (err.code !== "config_not_found") {
         // eslint-disable-next-line
         console.log(err);
@@ -380,7 +380,7 @@ class LovelacePanel extends LitElement {
           });
           this._ignoreNextUpdateEvent = true;
           await saveConfig(this.hass!, urlPath, newConfig);
-        } catch (err) {
+        } catch (err: any) {
           // eslint-disable-next-line
           console.error(err);
           // Rollback the optimistic update
@@ -415,7 +415,7 @@ class LovelacePanel extends LitElement {
           });
           this._ignoreNextUpdateEvent = true;
           await deleteConfig(this.hass!, urlPath);
-        } catch (err) {
+        } catch (err: any) {
           // eslint-disable-next-line
           console.error(err);
           // Rollback the optimistic update
@@ -449,5 +449,3 @@ class LovelacePanel extends LitElement {
     }
   }
 }
-
-customElements.define("ha-panel-lovelace", LovelacePanel);

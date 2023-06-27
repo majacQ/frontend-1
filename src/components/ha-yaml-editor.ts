@@ -1,7 +1,8 @@
 import { DEFAULT_SCHEMA, dump, load, Schema } from "js-yaml";
-import { html, LitElement, TemplateResult } from "lit";
+import { html, LitElement, nothing, PropertyValues } from "lit";
 import { customElement, property, state } from "lit/decorators";
 import { fireEvent } from "../common/dom/fire_event";
+import type { HomeAssistant } from "../types";
 import "./ha-code-editor";
 
 const isEmpty = (obj: Record<string, unknown>): boolean => {
@@ -18,6 +19,8 @@ const isEmpty = (obj: Record<string, unknown>): boolean => {
 
 @customElement("ha-yaml-editor")
 export class HaYamlEditor extends LitElement {
+  @property({ attribute: false }) public hass!: HomeAssistant;
+
   @property() public value?: any;
 
   @property({ attribute: false }) public yamlSchema: Schema = DEFAULT_SCHEMA;
@@ -28,15 +31,25 @@ export class HaYamlEditor extends LitElement {
 
   @property() public label?: string;
 
+  @property({ type: Boolean }) public autoUpdate = false;
+
+  @property({ type: Boolean }) public readOnly = false;
+
+  @property({ type: Boolean }) public required = false;
+
   @state() private _yaml = "";
 
   public setValue(value): void {
     try {
       this._yaml =
         value && !isEmpty(value)
-          ? dump(value, { schema: this.yamlSchema })
+          ? dump(value, {
+              schema: this.yamlSchema,
+              quotingType: '"',
+              noRefs: true,
+            })
           : "";
-    } catch (err) {
+    } catch (err: any) {
       // eslint-disable-next-line no-console
       console.error(err, value);
       alert(`There was an error converting to YAML: ${err}`);
@@ -49,17 +62,31 @@ export class HaYamlEditor extends LitElement {
     }
   }
 
-  protected render(): TemplateResult {
+  protected willUpdate(changedProperties: PropertyValues<this>): void {
+    super.willUpdate(changedProperties);
+    if (this.autoUpdate && changedProperties.has("value")) {
+      this.setValue(this.value);
+    }
+  }
+
+  protected render() {
     if (this._yaml === undefined) {
-      return html``;
+      return nothing;
     }
     return html`
-      ${this.label ? html`<p>${this.label}</p>` : ""}
+      ${this.label
+        ? html`<p>${this.label}${this.required ? " *" : ""}</p>`
+        : ""}
       <ha-code-editor
+        .hass=${this.hass}
         .value=${this._yaml}
+        .readOnly=${this.readOnly}
         mode="yaml"
+        autocomplete-entities
+        autocomplete-icons
         .error=${this.isValid === false}
         @value-changed=${this._onChange}
+        dir="ltr"
       ></ha-code-editor>
     `;
   }
@@ -73,7 +100,7 @@ export class HaYamlEditor extends LitElement {
     if (this._yaml) {
       try {
         parsed = load(this._yaml, { schema: this.yamlSchema });
-      } catch (err) {
+      } catch (err: any) {
         // Invalid YAML
         isValid = false;
       }

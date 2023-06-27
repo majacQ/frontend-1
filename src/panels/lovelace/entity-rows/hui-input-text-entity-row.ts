@@ -1,14 +1,8 @@
-import { PaperInputElement } from "@polymer/paper-input/paper-input";
-import {
-  css,
-  CSSResultGroup,
-  html,
-  LitElement,
-  PropertyValues,
-  TemplateResult,
-} from "lit";
+import { css, html, LitElement, PropertyValues, nothing } from "lit";
 import { customElement, property, state } from "lit/decorators";
-import { UNAVAILABLE } from "../../../data/entity";
+import { computeStateName } from "../../../common/entity/compute_state_name";
+import "../../../components/ha-textfield";
+import { isUnavailableState, UNAVAILABLE } from "../../../data/entity";
 import { setValue } from "../../../data/input_text";
 import { HomeAssistant } from "../../../types";
 import { hasConfigOrEntityChanged } from "../common/has-changed";
@@ -33,9 +27,9 @@ class HuiInputTextEntityRow extends LitElement implements LovelaceRow {
     return hasConfigOrEntityChanged(this, changedProps);
   }
 
-  protected render(): TemplateResult {
+  protected render() {
     if (!this._config || !this.hass) {
-      return html``;
+      return nothing;
     }
 
     const stateObj = this.hass.states[this._config.entity];
@@ -49,45 +43,54 @@ class HuiInputTextEntityRow extends LitElement implements LovelaceRow {
     }
 
     return html`
-      <hui-generic-entity-row .hass=${this.hass} .config=${this._config}>
-        <paper-input
-          no-label-float
+      <hui-generic-entity-row
+        .hass=${this.hass}
+        .config=${this._config}
+        hideName
+      >
+        <ha-textfield
+          .label=${this._config.name || computeStateName(stateObj)}
           .disabled=${stateObj.state === UNAVAILABLE}
-          .value="${stateObj.state}"
-          .minlength="${stateObj.attributes.min}"
-          .maxlength="${stateObj.attributes.max}"
-          .autoValidate="${stateObj.attributes.pattern}"
-          .pattern="${stateObj.attributes.pattern}"
-          .type="${stateObj.attributes.mode}"
-          @change="${this._selectedValueChanged}"
+          .value=${stateObj.state}
+          .minlength=${stateObj.attributes.min}
+          .maxlength=${stateObj.attributes.max}
+          .autoValidate=${stateObj.attributes.pattern}
+          .pattern=${stateObj.attributes.pattern}
+          .type=${stateObj.attributes.mode}
+          @change=${this._selectedValueChanged}
           placeholder="(empty value)"
-        ></paper-input>
+        ></ha-textfield>
       </hui-generic-entity-row>
     `;
   }
 
-  private get _inputEl(): PaperInputElement {
-    return this.shadowRoot!.querySelector("paper-input") as PaperInputElement;
-  }
-
   private _selectedValueChanged(ev): void {
-    const element = this._inputEl;
     const stateObj = this.hass!.states[this._config!.entity];
 
-    if (element.value !== stateObj.state) {
-      setValue(this.hass!, stateObj.entity_id, element.value!);
+    const newValue = ev.target.value;
+
+    // Filter out invalid text states
+    if (newValue && isUnavailableState(newValue)) {
+      ev.target.value = stateObj.state;
+      return;
+    }
+
+    if (newValue !== stateObj.state) {
+      setValue(this.hass!, stateObj.entity_id, newValue);
     }
 
     ev.target.blur();
   }
 
-  static get styles(): CSSResultGroup {
-    return css`
-      :host {
-        cursor: pointer;
-      }
-    `;
-  }
+  static styles = css`
+    hui-generic-entity-row {
+      display: flex;
+      align-items: center;
+    }
+    ha-textfield {
+      width: 100%;
+    }
+  `;
 }
 
 declare global {

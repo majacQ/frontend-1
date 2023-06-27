@@ -1,16 +1,13 @@
-// Run demo develop mode
-const gulp = require("gulp");
-
-const env = require("../env");
-
-require("./clean.js");
-require("./translations.js");
-require("./gen-icons-json.js");
-require("./gather-static.js");
-require("./webpack.js");
-require("./service-worker.js");
-require("./entry-html.js");
-require("./rollup.js");
+import gulp from "gulp";
+import env from "../env.cjs";
+import "./clean.js";
+import "./entry-html.js";
+import "./gather-static.js";
+import "./gen-icons-json.js";
+import "./rollup.js";
+import "./service-worker.js";
+import "./translations.js";
+import "./webpack.js";
 
 gulp.task(
   "develop-demo",
@@ -20,7 +17,12 @@ gulp.task(
     },
     "clean-demo",
     "translations-enable-merge-backend",
-    gulp.parallel("gen-icons-json", "gen-index-demo-dev", "build-translations"),
+    gulp.parallel(
+      "gen-icons-json",
+      "gen-pages-demo-dev",
+      "build-translations",
+      "build-locale-data"
+    ),
     "copy-static-demo",
     env.useRollup() ? "rollup-dev-server-demo" : "webpack-dev-server-demo"
   )
@@ -35,9 +37,9 @@ gulp.task(
     "clean-demo",
     // Cast needs to be backwards compatible and older HA has no translations
     "translations-enable-merge-backend",
-    gulp.parallel("gen-icons-json", "build-translations"),
+    gulp.parallel("gen-icons-json", "build-translations", "build-locale-data"),
     "copy-static-demo",
     env.useRollup() ? "rollup-prod-demo" : "webpack-prod-demo",
-    "gen-index-demo-prod"
+    "gen-pages-demo-prod"
   )
 );
